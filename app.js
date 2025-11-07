@@ -207,6 +207,22 @@ function updateMetrics() {
         !parseDate(p['Testing Start']) || !parseDate(p['Testing End'])
     ).length;
 
+    // Calculate projects where testing may not be required
+    const testingNotRequired = filteredData.filter(p => {
+        const missingTestDates = !parseDate(p['Testing Start']) || !parseDate(p['Testing End']);
+        if (!missingTestDates) return false;
+
+        const prelimHL7 = (p['Prelim HL7'] || '').trim();
+        const cycle1 = (p['Cycle 1'] || '').trim();
+        const cycle2 = (p['Cycle 2'] || '').trim();
+        const eCTASCAV = (p['eCTAS CAV'] || '').trim();
+
+        return prelimHL7 === 'Not Required' &&
+               cycle1 === 'Not Required' &&
+               cycle2 === 'Not Required' &&
+               eCTASCAV === 'Not Required';
+    }).length;
+
     // Date range
     const dates = filteredData.map(p => parseDate(p['OH Go-Live Date'])).filter(d => d);
     let dateRangeText = 'No date data';
@@ -223,7 +239,7 @@ function updateMetrics() {
         { label: 'Upcoming Go-Lives', value: upcomingGoLives, subtitle: 'Next 60 days', clickable: false },
         { label: 'In Testing', value: inTesting, subtitle: 'Currently testing', clickable: false },
         { label: 'Missing Date Data', value: missingAnyDate, subtitle: `Go-Live: ${missingGoLive}, Kick-Off: ${missingKickOff}`, clickable: true },
-        { label: 'Missing Testing Dates', value: missingAnyTestDate, subtitle: `Test Start: ${missingTestStart}, Test End: ${missingTestEnd}`, clickable: true },
+        { label: 'Missing Testing Dates', value: missingAnyTestDate, subtitle: `Test Start: ${missingTestStart}, Test End: ${missingTestEnd}, Not Required: ${testingNotRequired}`, clickable: true },
         { label: 'Project Leads', value: uniqueLeads, subtitle: 'Unique leads', clickable: false },
         { label: 'Specialists', value: uniqueSpecialists, subtitle: 'Unique specialists', clickable: false }
     ];
