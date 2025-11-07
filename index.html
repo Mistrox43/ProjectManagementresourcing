@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Workload Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@3.0.0/index.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Project Workload Dashboard</h1>
+            <p class="subtitle">Visualize team workload and project insights</p>
+        </header>
+
+        <!-- File Upload Section -->
+        <div class="upload-section" id="uploadSection">
+            <div class="upload-card">
+                <div class="upload-icon">📁</div>
+                <h2>Upload Project Data</h2>
+                <p>Upload your CSV file to generate insights</p>
+                <input type="file" id="csvFileInput" accept=".csv" style="display: none;">
+                <button class="btn-primary" onclick="document.getElementById('csvFileInput').click()">
+                    Choose CSV File
+                </button>
+                <p class="file-info" id="fileInfo"></p>
+            </div>
+        </div>
+
+        <!-- Dashboard Section (Hidden Initially) -->
+        <div class="dashboard" id="dashboard" style="display: none;">
+            <!-- Action Bar -->
+            <div class="action-bar">
+                <button class="btn-secondary" onclick="resetDashboard()">
+                    ↻ Upload New File
+                </button>
+                <div class="date-range">
+                    <span id="dateRangeDisplay"></span>
+                </div>
+            </div>
+
+            <!-- Key Metrics -->
+            <div class="metrics-grid" id="metricsGrid">
+                <!-- Metrics will be dynamically generated -->
+            </div>
+
+            <!-- Filters -->
+            <div class="filters-section">
+                <div class="filter-group">
+                    <label>Region:</label>
+                    <select id="regionFilter" onchange="applyFilters()">
+                        <option value="all">All Regions</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Project Status:</label>
+                    <select id="statusFilter" onchange="applyFilters()">
+                        <option value="all">All Statuses</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Project Type:</label>
+                    <select id="typeFilter" onchange="applyFilters()">
+                        <option value="all">All Types</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Project Lead:</label>
+                    <select id="leadFilter" onchange="applyFilters()">
+                        <option value="all">All Leads</option>
+                    </select>
+                </div>
+                <button class="btn-clear" onclick="clearFilters()">Clear Filters</button>
+            </div>
+
+            <!-- Charts Grid -->
+            <div class="charts-container">
+                <!-- Projects Timeline -->
+                <div class="chart-card full-width">
+                    <h3>Projects Timeline</h3>
+                    <canvas id="timelineChart"></canvas>
+                </div>
+
+                <!-- Staff Workload -->
+                <div class="chart-card">
+                    <h3>Workload by Project Lead</h3>
+                    <canvas id="leadWorkloadChart"></canvas>
+                </div>
+
+                <!-- Specialist Workload -->
+                <div class="chart-card">
+                    <h3>Workload by Specialist</h3>
+                    <canvas id="specialistWorkloadChart"></canvas>
+                </div>
+
+                <!-- Projects by Region -->
+                <div class="chart-card">
+                    <h3>Projects by Region</h3>
+                    <canvas id="regionChart"></canvas>
+                </div>
+
+                <!-- Projects by Status -->
+                <div class="chart-card">
+                    <h3>Projects by Status</h3>
+                    <canvas id="statusChart"></canvas>
+                </div>
+
+                <!-- Projects by Type -->
+                <div class="chart-card">
+                    <h3>Projects by Type</h3>
+                    <canvas id="typeChart"></canvas>
+                </div>
+
+                <!-- Monthly Go-Live Trend -->
+                <div class="chart-card full-width">
+                    <h3>Monthly Go-Live Timeline</h3>
+                    <canvas id="goLiveChart"></canvas>
+                </div>
+
+                <!-- Testing Timeline -->
+                <div class="chart-card full-width">
+                    <h3>Testing Schedule Overview</h3>
+                    <canvas id="testingChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Data Table -->
+            <div class="table-section">
+                <h3>Project Details</h3>
+                <div class="table-controls">
+                    <input type="text" id="searchBox" placeholder="Search projects..." onkeyup="filterTable()">
+                    <button class="btn-secondary" onclick="exportToCSV()">Export Filtered Data</button>
+                </div>
+                <div class="table-wrapper">
+                    <table id="projectTable">
+                        <thead id="tableHeader"></thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
