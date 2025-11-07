@@ -200,6 +200,13 @@ function updateMetrics() {
         !parseDate(p['OH Go-Live Date']) || !parseDate(p['Kick-Off Date'])
     ).length;
 
+    // Calculate projects with missing testing dates
+    const missingTestStart = filteredData.filter(p => !parseDate(p['Testing Start'])).length;
+    const missingTestEnd = filteredData.filter(p => !parseDate(p['Testing End'])).length;
+    const missingAnyTestDate = filteredData.filter(p =>
+        !parseDate(p['Testing Start']) || !parseDate(p['Testing End'])
+    ).length;
+
     // Date range
     const dates = filteredData.map(p => parseDate(p['OH Go-Live Date'])).filter(d => d);
     let dateRangeText = 'No date data';
@@ -216,12 +223,13 @@ function updateMetrics() {
         { label: 'Upcoming Go-Lives', value: upcomingGoLives, subtitle: 'Next 60 days', clickable: false },
         { label: 'In Testing', value: inTesting, subtitle: 'Currently testing', clickable: false },
         { label: 'Missing Date Data', value: missingAnyDate, subtitle: `Go-Live: ${missingGoLive}, Kick-Off: ${missingKickOff}`, clickable: true },
+        { label: 'Missing Testing Dates', value: missingAnyTestDate, subtitle: `Test Start: ${missingTestStart}, Test End: ${missingTestEnd}`, clickable: true },
         { label: 'Project Leads', value: uniqueLeads, subtitle: 'Unique leads', clickable: false },
         { label: 'Specialists', value: uniqueSpecialists, subtitle: 'Unique specialists', clickable: false }
     ];
 
     metricsGrid.innerHTML = metrics.map(m => `
-        <div class="metric-card ${m.clickable ? 'metric-card-clickable' : ''}" ${m.clickable ? `onclick="openMissingDatesPanel()"` : ''}>
+        <div class="metric-card ${m.clickable ? 'metric-card-clickable' : ''}" ${m.clickable ? `onclick="${m.label === 'Missing Date Data' ? 'openMissingDatesPanel()' : 'openMissingTestingDatesPanel()'}"` : ''}>
             <div class="metric-label">${m.label}</div>
             <div class="metric-value">${m.value}</div>
             <div class="metric-subtitle">${m.subtitle}</div>
@@ -1454,6 +1462,22 @@ function openMissingDatesPanel() {
     updateSidePanelContent();
 }
 
+// Open Missing Testing Dates Panel
+function openMissingTestingDatesPanel() {
+    sidePanelState = {
+        isOpen: true,
+        chartType: 'missing-testing-dates',
+        monthIndex: 0,
+        allMonths: [],
+        chartData: null
+    };
+
+    document.getElementById('sidePanel').classList.add('open');
+    document.getElementById('sidePanelOverlay').classList.add('open');
+
+    updateSidePanelContent();
+}
+
 // Close Side Panel
 function closeSidePanel() {
     document.getElementById('sidePanel').classList.remove('open');
@@ -1578,6 +1602,119 @@ function updateSidePanelContent() {
                             </div>
                             ${kickOffDate ? `<div class="date-info">Kick-Off: ${formatDate(kickOffDate)}</div>` : ''}
                             ${goLiveDate ? `<div class="date-info">Go-Live: ${formatDate(goLiveDate)}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('panelProjects').innerHTML = projectsHTML;
+        }
+        return;
+    }
+
+    // Handle missing testing dates panel separately
+    if (sidePanelState.chartType === 'missing-testing-dates') {
+        document.getElementById('panelTitle').textContent = 'Projects with Missing Testing Date Data';
+        document.querySelector('.panel-navigation').style.display = 'none';
+
+        // Get projects with missing testing dates
+        const missingTestStartProjects = filteredData.filter(p => !parseDate(p['Testing Start']));
+        const missingTestEndProjects = filteredData.filter(p => !parseDate(p['Testing End']));
+        const missingBothProjects = filteredData.filter(p =>
+            !parseDate(p['Testing Start']) && !parseDate(p['Testing End'])
+        );
+        const missingAnyProjects = filteredData.filter(p =>
+            !parseDate(p['Testing Start']) || !parseDate(p['Testing End'])
+        );
+
+        // Update summary stats
+        const summaryHTML = `
+            <div class="panel-stat">
+                <div class="panel-stat-label">Missing Any Test Date</div>
+                <div class="panel-stat-value">${missingAnyProjects.length}</div>
+            </div>
+            <div class="panel-stat">
+                <div class="panel-stat-label">Missing Test Start</div>
+                <div class="panel-stat-value">${missingTestStartProjects.length}</div>
+            </div>
+            <div class="panel-stat">
+                <div class="panel-stat-label">Missing Test End</div>
+                <div class="panel-stat-value">${missingTestEndProjects.length}</div>
+            </div>
+            <div class="panel-stat">
+                <div class="panel-stat-label">Missing Both</div>
+                <div class="panel-stat-value">${missingBothProjects.length}</div>
+            </div>
+        `;
+        document.getElementById('panelSummary').innerHTML = summaryHTML;
+
+        // Display all projects with missing testing dates
+        if (missingAnyProjects.length === 0) {
+            document.getElementById('panelProjects').innerHTML = `
+                <div class="panel-empty">
+                    <div class="panel-empty-icon">✓</div>
+                    <p>All projects have complete testing date data!</p>
+                </div>
+            `;
+        } else {
+            const projectsHTML = missingAnyProjects.map(project => {
+                const facilityName = project['Facility Name'] || 'Unknown Facility';
+                const projectShortName = project['Project Short Name'] || '';
+                const projectLead = project['OH Project Lead'] || 'Not Assigned';
+                const specialist = project['OH Specialist(s)'] || 'Not Assigned';
+                const status = project['Project Status'] || 'Unknown';
+                const region = project['OH Region'] || 'Unknown';
+                const projectType = project['Project Type'] || 'Unknown';
+                const lob = project['LOB'] || 'Unknown';
+
+                const testStartDate = parseDate(project['Testing Start']);
+                const testEndDate = parseDate(project['Testing End']);
+
+                const statusClass = getStatusClass(status);
+
+                const missingDates = [];
+                if (!testStartDate) missingDates.push('Testing Start');
+                if (!testEndDate) missingDates.push('Testing End');
+
+                return `
+                    <div class="project-card">
+                        <div class="project-card-header">
+                            <h4 class="project-name">${facilityName}</h4>
+                            <span class="status-badge ${statusClass}">${status}</span>
+                        </div>
+                        <div class="project-card-body">
+                            ${projectShortName ? `<div class="project-info-row">
+                                <span class="project-info-label">Project:</span>
+                                <span class="project-info-value">${projectShortName}</span>
+                            </div>` : ''}
+                            <div class="project-info-row">
+                                <span class="project-info-label">Type:</span>
+                                <span class="project-info-value">${projectType}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Region:</span>
+                                <span class="project-info-value">${region}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">LOB:</span>
+                                <span class="project-info-value">${lob}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Project Lead:</span>
+                                <span class="project-info-value">${projectLead}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Specialist:</span>
+                                <span class="project-info-value">${specialist}</span>
+                            </div>
+                        </div>
+                        <div class="project-missing-dates">
+                            <div class="missing-dates-label">Missing Testing Dates:</div>
+                            <div class="missing-dates-list">
+                                ${missingDates.map(d => `<span class="missing-date-badge">${d}</span>`).join('')}
+                            </div>
+                            ${testStartDate ? `<div class="date-info">Testing Start: ${formatDate(testStartDate)}</div>` : ''}
+                            ${testEndDate ? `<div class="date-info">Testing End: ${formatDate(testEndDate)}</div>` : ''}
                         </div>
                     </div>
                 `;
