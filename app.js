@@ -1463,6 +1463,13 @@ function updateSidePanelContent() {
     // Combine and deduplicate projects
     const allProjects = [...new Set([...activeProjects, ...testingProjects])];
 
+    // Sort projects by Facility Name
+    allProjects.sort((a, b) => {
+        const nameA = (a['Facility Name'] || 'Unknown').toLowerCase();
+        const nameB = (b['Facility Name'] || 'Unknown').toLowerCase();
+        return nameA.localeCompare(nameB);
+    });
+
     // Update projects list
     if (allProjects.length === 0) {
         document.getElementById('panelProjects').innerHTML = `
@@ -1480,6 +1487,7 @@ function updateSidePanelContent() {
             const status = project['Project Status'] || 'Unknown';
             const region = project['OH Region'] || 'Unknown';
             const projectType = project['Project Type'] || 'Unknown';
+            const lob = project['LOB'] || 'Unknown';
 
             const kickOff = parseDate(project['Kick-Off Date']);
             const goLive = parseDate(project['OH Go-Live Date']);
@@ -1509,6 +1517,10 @@ function updateSidePanelContent() {
                         <div class="project-info-row">
                             <span class="project-info-label">Region:</span>
                             <span class="project-info-value">${region}</span>
+                        </div>
+                        <div class="project-info-row">
+                            <span class="project-info-label">LOB:</span>
+                            <span class="project-info-value">${lob}</span>
                         </div>
                         <div class="project-info-row">
                             <span class="project-info-label">Project Lead:</span>
