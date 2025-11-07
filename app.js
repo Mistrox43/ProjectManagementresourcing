@@ -31,23 +31,63 @@ function handleFileUpload(event) {
     reader.readAsText(file);
 }
 
-// Parse CSV data
+// Parse CSV data with proper handling of quoted fields
 function parseCSV(csvText) {
-    const lines = csvText.trim().split('\n');
-    const headers = lines[0].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(h => h.trim().replace(/^"|"$/g, ''));
+    const lines = csvText.trim().split(/\r?\n/);
 
+    // Parse a single CSV line, handling quoted fields properly
+    function parseLine(line) {
+        const fields = [];
+        let currentField = '';
+        let insideQuotes = false;
+
+        for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            const nextChar = line[i + 1];
+
+            if (char === '"') {
+                if (insideQuotes && nextChar === '"') {
+                    // Escaped quote inside quoted field
+                    currentField += '"';
+                    i++; // Skip next quote
+                } else {
+                    // Toggle quote state
+                    insideQuotes = !insideQuotes;
+                }
+            } else if (char === ',' && !insideQuotes) {
+                // End of field
+                fields.push(currentField.trim());
+                currentField = '';
+            } else {
+                currentField += char;
+            }
+        }
+
+        // Add the last field
+        fields.push(currentField.trim());
+
+        return fields;
+    }
+
+    // Parse header
+    const headers = parseLine(lines[0]);
+
+    // Parse data rows
     projectData = [];
     for (let i = 1; i < lines.length; i++) {
         if (lines[i].trim() === '') continue;
 
-        const values = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.trim().replace(/^"|"$/g, ''));
+        const values = parseLine(lines[i]);
         const row = {};
 
         headers.forEach((header, index) => {
             row[header] = values[index] || '';
         });
 
-        projectData.push(row);
+        // Only add row if it has meaningful data
+        if (Object.values(row).some(v => v !== '')) {
+            projectData.push(row);
+        }
     }
 
     filteredData = [...projectData];
