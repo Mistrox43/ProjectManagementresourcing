@@ -529,14 +529,20 @@ function createLeadTimelineChart() {
     const select = document.getElementById('leadTimelineSelect');
     const selectedLeads = Array.from(select.selectedOptions).map(opt => opt.value);
 
+    // Get selected timeline type
+    const timelineType = document.querySelector('input[name="leadTimelineType"]:checked').value;
+
     if (selectedLeads.length === 0) {
         return;
     }
 
     // Get all projects with dates for selected leads
-    const leadProjects = {};
+    const leadProjectData = {};
+    const leadTestingData = {};
+
     selectedLeads.forEach(lead => {
-        leadProjects[lead] = filteredData
+        // Project lifecycle data
+        leadProjectData[lead] = filteredData
             .filter(p => p['OH Project Lead'] === lead)
             .map(project => ({
                 kickOff: parseDate(project['Kick-Off Date']),
@@ -544,15 +550,36 @@ function createLeadTimelineChart() {
                 project: project
             }))
             .filter(p => p.kickOff && p.goLive);
+
+        // Testing phase data
+        leadTestingData[lead] = filteredData
+            .filter(p => p['OH Project Lead'] === lead)
+            .map(project => ({
+                testStart: parseDate(project['Testing Start']),
+                testEnd: parseDate(project['Testing End']),
+                project: project
+            }))
+            .filter(p => p.testStart && p.testEnd);
     });
 
-    // Find overall date range
+    // Find overall date range based on timeline type
     const allDates = [];
-    Object.values(leadProjects).forEach(projects => {
-        projects.forEach(p => {
-            allDates.push(p.kickOff, p.goLive);
+
+    if (timelineType === 'project' || timelineType === 'both') {
+        Object.values(leadProjectData).forEach(projects => {
+            projects.forEach(p => {
+                allDates.push(p.kickOff, p.goLive);
+            });
         });
-    });
+    }
+
+    if (timelineType === 'testing' || timelineType === 'both') {
+        Object.values(leadTestingData).forEach(projects => {
+            projects.forEach(p => {
+                allDates.push(p.testStart, p.testEnd);
+            });
+        });
+    }
 
     if (allDates.length === 0) {
         return;
@@ -571,30 +598,59 @@ function createLeadTimelineChart() {
         currentMonth.setMonth(currentMonth.getMonth() + 1);
     }
 
-    // Create datasets for each lead
+    // Create datasets based on timeline type
     const colors = [
         '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
         '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#14b8a6'
     ];
 
-    const datasets = selectedLeads.map((lead, index) => {
-        const projectCounts = months.map(month => {
-            const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
-            return leadProjects[lead].filter(p => {
-                return p.kickOff <= monthEnd && p.goLive >= month;
-            }).length;
-        });
+    const datasets = [];
+    let datasetIndex = 0;
 
-        return {
-            label: lead,
-            data: projectCounts,
-            borderColor: colors[index % colors.length],
-            backgroundColor: colors[index % colors.length] + '20',
-            tension: 0.4,
-            borderWidth: 2,
-            pointRadius: 3,
-            pointHoverRadius: 5
-        };
+    selectedLeads.forEach((lead, leadIndex) => {
+        // Project lifecycle line
+        if (timelineType === 'project' || timelineType === 'both') {
+            const projectCounts = months.map(month => {
+                const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+                return leadProjectData[lead].filter(p => {
+                    return p.kickOff <= monthEnd && p.goLive >= month;
+                }).length;
+            });
+
+            datasets.push({
+                label: timelineType === 'both' ? `${lead} (Project)` : lead,
+                data: projectCounts,
+                borderColor: colors[leadIndex % colors.length],
+                backgroundColor: colors[leadIndex % colors.length] + '20',
+                tension: 0.4,
+                borderWidth: 2,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                borderDash: []
+            });
+        }
+
+        // Testing phase line
+        if (timelineType === 'testing' || timelineType === 'both') {
+            const testingCounts = months.map(month => {
+                const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+                return leadTestingData[lead].filter(p => {
+                    return p.testStart <= monthEnd && p.testEnd >= month;
+                }).length;
+            });
+
+            datasets.push({
+                label: timelineType === 'both' ? `${lead} (Testing)` : lead,
+                data: testingCounts,
+                borderColor: colors[leadIndex % colors.length],
+                backgroundColor: colors[leadIndex % colors.length] + '20',
+                tension: 0.4,
+                borderWidth: 2,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                borderDash: timelineType === 'both' ? [5, 5] : []
+            });
+        }
     });
 
     const labels = months.map(m => `${getMonthName(m.getMonth())} ${m.getFullYear()}`);
@@ -648,25 +704,44 @@ function createSpecialistTimelineChart() {
     const select = document.getElementById('specialistTimelineSelect');
     const selectedSpecialists = Array.from(select.selectedOptions).map(opt => opt.value);
 
+    // Get selected timeline type
+    const timelineType = document.querySelector('input[name="specialistTimelineType"]:checked').value;
+
     if (selectedSpecialists.length === 0) {
         return;
     }
 
     // Get all projects with dates for selected specialists
-    const specialistProjects = {};
+    const specialistProjectData = {};
+    const specialistTestingData = {};
+
     selectedSpecialists.forEach(specialist => {
-        specialistProjects[specialist] = [];
+        specialistProjectData[specialist] = [];
+        specialistTestingData[specialist] = [];
+
         filteredData.forEach(project => {
             const specialists = project['OH Specialist(s)'];
             if (specialists) {
                 const specialistList = specialists.split(/[;,]/).map(s => s.trim()).filter(s => s);
                 if (specialistList.includes(specialist)) {
+                    // Project lifecycle data
                     const kickOff = parseDate(project['Kick-Off Date']);
                     const goLive = parseDate(project['OH Go-Live Date']);
                     if (kickOff && goLive) {
-                        specialistProjects[specialist].push({
+                        specialistProjectData[specialist].push({
                             kickOff: kickOff,
                             goLive: goLive,
+                            project: project
+                        });
+                    }
+
+                    // Testing phase data
+                    const testStart = parseDate(project['Testing Start']);
+                    const testEnd = parseDate(project['Testing End']);
+                    if (testStart && testEnd) {
+                        specialistTestingData[specialist].push({
+                            testStart: testStart,
+                            testEnd: testEnd,
                             project: project
                         });
                     }
@@ -675,13 +750,24 @@ function createSpecialistTimelineChart() {
         });
     });
 
-    // Find overall date range
+    // Find overall date range based on timeline type
     const allDates = [];
-    Object.values(specialistProjects).forEach(projects => {
-        projects.forEach(p => {
-            allDates.push(p.kickOff, p.goLive);
+
+    if (timelineType === 'project' || timelineType === 'both') {
+        Object.values(specialistProjectData).forEach(projects => {
+            projects.forEach(p => {
+                allDates.push(p.kickOff, p.goLive);
+            });
         });
-    });
+    }
+
+    if (timelineType === 'testing' || timelineType === 'both') {
+        Object.values(specialistTestingData).forEach(projects => {
+            projects.forEach(p => {
+                allDates.push(p.testStart, p.testEnd);
+            });
+        });
+    }
 
     if (allDates.length === 0) {
         return;
@@ -700,30 +786,58 @@ function createSpecialistTimelineChart() {
         currentMonth.setMonth(currentMonth.getMonth() + 1);
     }
 
-    // Create datasets for each specialist
+    // Create datasets based on timeline type
     const colors = [
         '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
         '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#14b8a6'
     ];
 
-    const datasets = selectedSpecialists.map((specialist, index) => {
-        const projectCounts = months.map(month => {
-            const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
-            return specialistProjects[specialist].filter(p => {
-                return p.kickOff <= monthEnd && p.goLive >= month;
-            }).length;
-        });
+    const datasets = [];
 
-        return {
-            label: specialist,
-            data: projectCounts,
-            borderColor: colors[index % colors.length],
-            backgroundColor: colors[index % colors.length] + '20',
-            tension: 0.4,
-            borderWidth: 2,
-            pointRadius: 3,
-            pointHoverRadius: 5
-        };
+    selectedSpecialists.forEach((specialist, specialistIndex) => {
+        // Project lifecycle line
+        if (timelineType === 'project' || timelineType === 'both') {
+            const projectCounts = months.map(month => {
+                const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+                return specialistProjectData[specialist].filter(p => {
+                    return p.kickOff <= monthEnd && p.goLive >= month;
+                }).length;
+            });
+
+            datasets.push({
+                label: timelineType === 'both' ? `${specialist} (Project)` : specialist,
+                data: projectCounts,
+                borderColor: colors[specialistIndex % colors.length],
+                backgroundColor: colors[specialistIndex % colors.length] + '20',
+                tension: 0.4,
+                borderWidth: 2,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                borderDash: []
+            });
+        }
+
+        // Testing phase line
+        if (timelineType === 'testing' || timelineType === 'both') {
+            const testingCounts = months.map(month => {
+                const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+                return specialistTestingData[specialist].filter(p => {
+                    return p.testStart <= monthEnd && p.testEnd >= month;
+                }).length;
+            });
+
+            datasets.push({
+                label: timelineType === 'both' ? `${specialist} (Testing)` : specialist,
+                data: testingCounts,
+                borderColor: colors[specialistIndex % colors.length],
+                backgroundColor: colors[specialistIndex % colors.length] + '20',
+                tension: 0.4,
+                borderWidth: 2,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                borderDash: timelineType === 'both' ? [5, 5] : []
+            });
+        }
     });
 
     const labels = months.map(m => `${getMonthName(m.getMonth())} ${m.getFullYear()}`);
