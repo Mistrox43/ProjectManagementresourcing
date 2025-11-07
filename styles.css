@@ -197,6 +197,16 @@ header h1 {
     box-shadow: var(--shadow-lg);
 }
 
+.metric-card-clickable {
+    cursor: pointer;
+}
+
+.metric-card-clickable:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.15);
+    border-left-color: var(--primary-dark);
+}
+
 .metric-label {
     font-size: 0.875rem;
     color: var(--text-secondary);
@@ -806,6 +816,44 @@ tbody tr:hover {
     border-radius: 3px;
     flex: 1;
     min-width: 100px;
+}
+
+.project-missing-dates {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+}
+
+.missing-dates-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.missing-dates-list {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.5rem;
+}
+
+.missing-date-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    background: var(--danger-color);
+    color: white;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.date-info {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
 }
 
 .panel-empty {
