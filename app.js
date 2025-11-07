@@ -107,11 +107,13 @@ function populateFilters() {
     const regions = [...new Set(projectData.map(p => p['OH Region']).filter(r => r))];
     const statuses = [...new Set(projectData.map(p => p['Project Status']).filter(s => s))];
     const types = [...new Set(projectData.map(p => p['Project Type']).filter(t => t))];
+    const lobs = [...new Set(projectData.map(p => p['LOB']).filter(l => l))];
     const leads = [...new Set(projectData.map(p => p['OH Project Lead']).filter(l => l))];
 
     populateSelect('regionFilter', regions);
     populateSelect('statusFilter', statuses);
     populateSelect('typeFilter', types);
+    populateSelect('lobFilter', lobs);
     populateSelect('leadFilter', leads);
 }
 
@@ -1221,12 +1223,14 @@ function applyFilters() {
     const regionFilter = document.getElementById('regionFilter').value;
     const statusFilter = document.getElementById('statusFilter').value;
     const typeFilter = document.getElementById('typeFilter').value;
+    const lobFilter = document.getElementById('lobFilter').value;
     const leadFilter = document.getElementById('leadFilter').value;
 
     filteredData = projectData.filter(project => {
         return (regionFilter === 'all' || project['OH Region'] === regionFilter) &&
                (statusFilter === 'all' || project['Project Status'] === statusFilter) &&
                (typeFilter === 'all' || project['Project Type'] === typeFilter) &&
+               (lobFilter === 'all' || project['LOB'] === lobFilter) &&
                (leadFilter === 'all' || project['OH Project Lead'] === leadFilter);
     });
 
@@ -1240,6 +1244,7 @@ function clearFilters() {
     document.getElementById('regionFilter').value = 'all';
     document.getElementById('statusFilter').value = 'all';
     document.getElementById('typeFilter').value = 'all';
+    document.getElementById('lobFilter').value = 'all';
     document.getElementById('leadFilter').value = 'all';
     document.getElementById('searchBox').value = '';
 
