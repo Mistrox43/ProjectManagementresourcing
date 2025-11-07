@@ -162,25 +162,69 @@ function createCharts() {
     createTestingChart();
 }
 
-// Timeline Chart - Projects over time
+// Timeline Chart - Concurrent Active Projects over time
 function createTimelineChart() {
     destroyChart('timelineChart');
 
-    const monthlyData = {};
-    filteredData.forEach(project => {
-        const goLiveDate = parseDate(project['OH Go-Live Date']);
-        if (goLiveDate) {
-            const monthKey = `${goLiveDate.getFullYear()}-${String(goLiveDate.getMonth() + 1).padStart(2, '0')}`;
-            monthlyData[monthKey] = (monthlyData[monthKey] || 0) + 1;
-        }
+    // Collect all projects with valid kick-off and go-live dates
+    const projectsWithDates = filteredData
+        .map(project => ({
+            kickOff: parseDate(project['Kick-Off Date']),
+            goLive: parseDate(project['OH Go-Live Date']),
+            project: project
+        }))
+        .filter(p => p.kickOff && p.goLive);
+
+    if (projectsWithDates.length === 0) {
+        // No valid date data, show empty chart
+        const ctx = document.getElementById('timelineChart').getContext('2d');
+        charts.timelineChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['No Data'],
+                datasets: [{
+                    label: 'Active Projects',
+                    data: [0],
+                    borderColor: '#2563eb',
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            }
+        });
+        return;
+    }
+
+    // Find the overall date range
+    const allKickOffs = projectsWithDates.map(p => p.kickOff);
+    const allGoLives = projectsWithDates.map(p => p.goLive);
+    const minDate = new Date(Math.min(...allKickOffs));
+    const maxDate = new Date(Math.max(...allGoLives));
+
+    // Generate all months in the range
+    const months = [];
+    const currentMonth = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+    const endMonth = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+
+    while (currentMonth <= endMonth) {
+        months.push(new Date(currentMonth));
+        currentMonth.setMonth(currentMonth.getMonth() + 1);
+    }
+
+    // For each month, count how many projects are active
+    // A project is active if: kickOff <= month AND goLive >= month
+    const activeProjectCounts = months.map(month => {
+        const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0); // Last day of month
+
+        return projectsWithDates.filter(p => {
+            // Project is active if it started on or before the end of this month
+            // AND ends on or after the start of this month
+            return p.kickOff <= monthEnd && p.goLive >= month;
+        }).length;
     });
 
-    const sortedMonths = Object.keys(monthlyData).sort();
-    const labels = sortedMonths.map(m => {
-        const [year, month] = m.split('-');
-        return `${getMonthName(parseInt(month) - 1)} ${year}`;
-    });
-    const values = sortedMonths.map(m => monthlyData[m]);
+    // Format labels
+    const labels = months.map(m => `${getMonthName(m.getMonth())} ${m.getFullYear()}`);
 
     const ctx = document.getElementById('timelineChart').getContext('2d');
     charts.timelineChart = new Chart(ctx, {
@@ -188,12 +232,15 @@ function createTimelineChart() {
         data: {
             labels: labels,
             datasets: [{
-                label: 'Projects',
-                data: values,
+                label: 'Active Projects',
+                data: activeProjectCounts,
                 borderColor: '#2563eb',
                 backgroundColor: 'rgba(37, 99, 235, 0.1)',
                 tension: 0.4,
-                fill: true
+                fill: true,
+                borderWidth: 2,
+                pointRadius: 3,
+                pointHoverRadius: 5
             }]
         },
         options: {
@@ -201,7 +248,15 @@ function createTimelineChart() {
             maintainAspectRatio: true,
             plugins: {
                 legend: {
-                    display: false
+                    display: true,
+                    position: 'top'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `Active Projects: ${context.parsed.y}`;
+                        }
+                    }
                 }
             },
             scales: {
@@ -209,6 +264,16 @@ function createTimelineChart() {
                     beginAtZero: true,
                     ticks: {
                         stepSize: 1
+                    },
+                    title: {
+                        display: true,
+                        text: 'Number of Active Projects'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Timeline'
                     }
                 }
             }

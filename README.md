@@ -5,7 +5,7 @@ A professional web-based application for visualizing and analyzing project manag
 ## Features
 
 ### 📊 Visual Analytics
-- **Projects Timeline**: Track project distribution over time with interactive line charts
+- **Active Projects Timeline**: Track concurrent active projects over time to understand true workload capacity
 - **Staff Workload Analysis**: View workload distribution by Project Leads and Specialists
 - **Regional Distribution**: Understand project distribution across different regions
 - **Status & Type Breakdown**: Analyze projects by status and type with pie/doughnut charts
