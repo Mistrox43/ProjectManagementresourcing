@@ -244,6 +244,14 @@ header h1 {
     margin-bottom: 0.5rem;
 }
 
+.filter-hint {
+    font-size: 0.7rem;
+    font-weight: 400;
+    color: var(--text-secondary);
+    opacity: 0.8;
+    font-style: italic;
+}
+
 .filter-group select {
     padding: 0.5rem;
     border: 1px solid var(--border);
@@ -254,9 +262,25 @@ header h1 {
     transition: border-color 0.2s;
 }
 
+.filter-group select[multiple] {
+    padding: 0.25rem;
+}
+
+.filter-group select[multiple] option {
+    padding: 0.5rem;
+    border-radius: 4px;
+    margin: 0.1rem;
+}
+
+.filter-group select[multiple] option:checked {
+    background: linear-gradient(90deg, var(--primary-color), var(--primary-dark));
+    color: white;
+}
+
 .filter-group select:focus {
     outline: none;
     border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
 /* Charts Container */

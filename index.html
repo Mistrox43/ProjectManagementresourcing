@@ -44,33 +44,33 @@
             <!-- Filters -->
             <div class="filters-section">
                 <div class="filter-group">
-                    <label>Region:</label>
-                    <select id="regionFilter" onchange="applyFilters()">
-                        <option value="all">All Regions</option>
+                    <label>Region: <span class="filter-hint">(Hold Ctrl/Cmd to select multiple)</span></label>
+                    <select id="regionFilter" multiple size="4" onchange="applyFilters()">
+                        <option value="all" selected>All Regions</option>
                     </select>
                 </div>
                 <div class="filter-group">
-                    <label>Project Status:</label>
-                    <select id="statusFilter" onchange="applyFilters()">
-                        <option value="all">All Statuses</option>
+                    <label>Project Status: <span class="filter-hint">(Hold Ctrl/Cmd to select multiple)</span></label>
+                    <select id="statusFilter" multiple size="4" onchange="applyFilters()">
+                        <option value="all" selected>All Statuses</option>
                     </select>
                 </div>
                 <div class="filter-group">
-                    <label>Project Type:</label>
-                    <select id="typeFilter" onchange="applyFilters()">
-                        <option value="all">All Types</option>
+                    <label>Project Type: <span class="filter-hint">(Hold Ctrl/Cmd to select multiple)</span></label>
+                    <select id="typeFilter" multiple size="4" onchange="applyFilters()">
+                        <option value="all" selected>All Types</option>
                     </select>
                 </div>
                 <div class="filter-group">
-                    <label>LOB:</label>
-                    <select id="lobFilter" onchange="applyFilters()">
-                        <option value="all">All LOBs</option>
+                    <label>LOB: <span class="filter-hint">(Hold Ctrl/Cmd to select multiple)</span></label>
+                    <select id="lobFilter" multiple size="4" onchange="applyFilters()">
+                        <option value="all" selected>All LOBs</option>
                     </select>
                 </div>
                 <div class="filter-group">
-                    <label>Project Lead:</label>
-                    <select id="leadFilter" onchange="applyFilters()">
-                        <option value="all">All Leads</option>
+                    <label>Project Lead: <span class="filter-hint">(Hold Ctrl/Cmd to select multiple)</span></label>
+                    <select id="leadFilter" multiple size="4" onchange="applyFilters()">
+                        <option value="all" selected>All Leads</option>
                     </select>
                 </div>
                 <button class="btn-clear" onclick="clearFilters()">Clear Filters</button>
