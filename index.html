@@ -209,6 +209,28 @@
                 </div>
             </div>
         </div>
+
+        <!-- Side Panel for Project Details -->
+        <div class="side-panel" id="sidePanel">
+            <div class="side-panel-header">
+                <h3 id="panelTitle">Project Details</h3>
+                <button class="btn-close-panel" onclick="closeSidePanel()">&times;</button>
+            </div>
+            <div class="side-panel-content">
+                <div class="panel-navigation">
+                    <button class="btn-nav" onclick="navigatePeriod('prev')">&larr; Previous Month</button>
+                    <span id="currentPeriod" class="current-period"></span>
+                    <button class="btn-nav" onclick="navigatePeriod('next')">Next Month &rarr;</button>
+                </div>
+                <div class="panel-summary" id="panelSummary">
+                    <!-- Summary stats will go here -->
+                </div>
+                <div class="panel-projects" id="panelProjects">
+                    <!-- Project list will go here -->
+                </div>
+            </div>
+        </div>
+        <div class="side-panel-overlay" id="sidePanelOverlay" onclick="closeSidePanel()"></div>
     </div>
 
     <script src="app.js"></script>

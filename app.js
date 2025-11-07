@@ -338,6 +338,12 @@ function createTimelineChart() {
         options: {
             responsive: true,
             maintainAspectRatio: true,
+            onClick: (event, elements) => {
+                if (elements.length > 0) {
+                    const monthIndex = elements[0].index;
+                    openSidePanel('main-timeline', monthIndex, months, { activeProjectCounts, testingProjectCounts });
+                }
+            },
             plugins: {
                 legend: {
                     display: true,
@@ -673,6 +679,12 @@ function createLeadTimelineChart() {
         options: {
             responsive: true,
             maintainAspectRatio: true,
+            onClick: (event, elements) => {
+                if (elements.length > 0) {
+                    const monthIndex = elements[0].index;
+                    openSidePanel('lead-timeline', monthIndex, months, { selectedLeads, timelineType });
+                }
+            },
             plugins: {
                 legend: {
                     display: true,
@@ -860,6 +872,12 @@ function createSpecialistTimelineChart() {
         options: {
             responsive: true,
             maintainAspectRatio: true,
+            onClick: (event, elements) => {
+                if (elements.length > 0) {
+                    const monthIndex = elements[0].index;
+                    openSidePanel('specialist-timeline', monthIndex, months, { selectedSpecialists, timelineType });
+                }
+            },
             plugins: {
                 legend: {
                     display: true,
@@ -1300,5 +1318,236 @@ function getStatusClass(status) {
 function destroyChart(chartId) {
     if (charts[chartId]) {
         charts[chartId].destroy();
+    }
+}
+
+// Side Panel State
+let sidePanelState = {
+    isOpen: false,
+    chartType: null,
+    monthIndex: null,
+    allMonths: [],
+    chartData: null
+};
+
+// Open Side Panel
+function openSidePanel(chartType, monthIndex, months, chartData) {
+    sidePanelState = {
+        isOpen: true,
+        chartType: chartType,
+        monthIndex: monthIndex,
+        allMonths: months,
+        chartData: chartData
+    };
+
+    document.getElementById('sidePanel').classList.add('open');
+    document.getElementById('sidePanelOverlay').classList.add('open');
+
+    updateSidePanelContent();
+}
+
+// Close Side Panel
+function closeSidePanel() {
+    document.getElementById('sidePanel').classList.remove('open');
+    document.getElementById('sidePanelOverlay').classList.remove('open');
+
+    sidePanelState.isOpen = false;
+}
+
+// Navigate Period
+function navigatePeriod(direction) {
+    if (direction === 'prev' && sidePanelState.monthIndex > 0) {
+        sidePanelState.monthIndex--;
+        updateSidePanelContent();
+    } else if (direction === 'next' && sidePanelState.monthIndex < sidePanelState.allMonths.length - 1) {
+        sidePanelState.monthIndex++;
+        updateSidePanelContent();
+    }
+}
+
+// Update Side Panel Content
+function updateSidePanelContent() {
+    const month = sidePanelState.allMonths[sidePanelState.monthIndex];
+    const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+    const monthLabel = `${getMonthName(month.getMonth())} ${month.getFullYear()}`;
+
+    // Update title and current period
+    document.getElementById('panelTitle').textContent = `Projects Active in ${monthLabel}`;
+    document.getElementById('currentPeriod').textContent = monthLabel;
+
+    // Get active projects for this month
+    let activeProjects = [];
+    let testingProjects = [];
+
+    if (sidePanelState.chartType === 'main-timeline') {
+        // Active projects
+        activeProjects = filteredData.filter(p => {
+            const kickOff = parseDate(p['Kick-Off Date']);
+            const goLive = parseDate(p['OH Go-Live Date']);
+            return kickOff && goLive && kickOff <= monthEnd && goLive >= month;
+        });
+
+        // Testing projects
+        testingProjects = filteredData.filter(p => {
+            const testStart = parseDate(p['Testing Start']);
+            const testEnd = parseDate(p['Testing End']);
+            return testStart && testEnd && testStart <= monthEnd && testEnd >= month;
+        });
+    } else if (sidePanelState.chartType === 'lead-timeline') {
+        // For individual lead timeline
+        const timelineType = document.querySelector('input[name="leadTimelineType"]:checked').value;
+        const selectedLeads = Array.from(document.getElementById('leadTimelineSelect').selectedOptions).map(opt => opt.value);
+
+        if (timelineType === 'project' || timelineType === 'both') {
+            activeProjects = filteredData.filter(p => {
+                const kickOff = parseDate(p['Kick-Off Date']);
+                const goLive = parseDate(p['OH Go-Live Date']);
+                const isSelectedLead = selectedLeads.includes(p['OH Project Lead']);
+                return kickOff && goLive && kickOff <= monthEnd && goLive >= month && isSelectedLead;
+            });
+        }
+
+        if (timelineType === 'testing' || timelineType === 'both') {
+            testingProjects = filteredData.filter(p => {
+                const testStart = parseDate(p['Testing Start']);
+                const testEnd = parseDate(p['Testing End']);
+                const isSelectedLead = selectedLeads.includes(p['OH Project Lead']);
+                return testStart && testEnd && testStart <= monthEnd && testEnd >= month && isSelectedLead;
+            });
+        }
+    } else if (sidePanelState.chartType === 'specialist-timeline') {
+        // For individual specialist timeline
+        const timelineType = document.querySelector('input[name="specialistTimelineType"]:checked').value;
+        const selectedSpecialists = Array.from(document.getElementById('specialistTimelineSelect').selectedOptions).map(opt => opt.value);
+
+        filteredData.forEach(p => {
+            const specialists = p['OH Specialist(s)'];
+            if (specialists) {
+                const specialistList = specialists.split(/[;,]/).map(s => s.trim()).filter(s => s);
+                const hasSelectedSpecialist = specialistList.some(s => selectedSpecialists.includes(s));
+
+                if (hasSelectedSpecialist) {
+                    if (timelineType === 'project' || timelineType === 'both') {
+                        const kickOff = parseDate(p['Kick-Off Date']);
+                        const goLive = parseDate(p['OH Go-Live Date']);
+                        if (kickOff && goLive && kickOff <= monthEnd && goLive >= month) {
+                            activeProjects.push(p);
+                        }
+                    }
+
+                    if (timelineType === 'testing' || timelineType === 'both') {
+                        const testStart = parseDate(p['Testing Start']);
+                        const testEnd = parseDate(p['Testing End']);
+                        if (testStart && testEnd && testStart <= monthEnd && testEnd >= month) {
+                            testingProjects.push(p);
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Update summary stats
+    const summaryHTML = `
+        <div class="panel-stat">
+            <div class="panel-stat-label">Active Projects</div>
+            <div class="panel-stat-value">${activeProjects.length}</div>
+        </div>
+        <div class="panel-stat">
+            <div class="panel-stat-label">In Testing</div>
+            <div class="panel-stat-value">${testingProjects.length}</div>
+        </div>
+    `;
+    document.getElementById('panelSummary').innerHTML = summaryHTML;
+
+    // Combine and deduplicate projects
+    const allProjects = [...new Set([...activeProjects, ...testingProjects])];
+
+    // Update projects list
+    if (allProjects.length === 0) {
+        document.getElementById('panelProjects').innerHTML = `
+            <div class="panel-empty">
+                <div class="panel-empty-icon">📋</div>
+                <p>No projects active during this period</p>
+            </div>
+        `;
+    } else {
+        const projectsHTML = allProjects.map(project => {
+            const facilityName = project['Facility Name'] || 'Unknown Facility';
+            const projectShortName = project['Project Short Name'] || '';
+            const projectLead = project['OH Project Lead'] || 'Not Assigned';
+            const specialist = project['OH Specialist(s)'] || 'Not Assigned';
+            const status = project['Project Status'] || 'Unknown';
+            const region = project['OH Region'] || 'Unknown';
+            const projectType = project['Project Type'] || 'Unknown';
+
+            const kickOff = parseDate(project['Kick-Off Date']);
+            const goLive = parseDate(project['OH Go-Live Date']);
+            const testStart = parseDate(project['Testing Start']);
+            const testEnd = parseDate(project['Testing End']);
+
+            const isActive = kickOff && goLive && kickOff <= monthEnd && goLive >= month;
+            const isTesting = testStart && testEnd && testStart <= monthEnd && testEnd >= month;
+
+            const statusClass = getStatusClass(status);
+
+            return `
+                <div class="project-card">
+                    <div class="project-card-header">
+                        <h4 class="project-name">${facilityName}</h4>
+                        <span class="status-badge ${statusClass}">${status}</span>
+                    </div>
+                    <div class="project-card-body">
+                        ${projectShortName ? `<div class="project-info-row">
+                            <span class="project-info-label">Project:</span>
+                            <span class="project-info-value">${projectShortName}</span>
+                        </div>` : ''}
+                        <div class="project-info-row">
+                            <span class="project-info-label">Type:</span>
+                            <span class="project-info-value">${projectType}</span>
+                        </div>
+                        <div class="project-info-row">
+                            <span class="project-info-label">Region:</span>
+                            <span class="project-info-value">${region}</span>
+                        </div>
+                        <div class="project-info-row">
+                            <span class="project-info-label">Project Lead:</span>
+                            <span class="project-info-value">${projectLead}</span>
+                        </div>
+                        <div class="project-info-row">
+                            <span class="project-info-label">Specialist:</span>
+                            <span class="project-info-value">${specialist}</span>
+                        </div>
+                    </div>
+                    <div class="project-timeline">
+                        ${isActive ? `
+                            <div class="timeline-bar">
+                                <span class="timeline-label">Project:</span>
+                                <div class="timeline-visual"></div>
+                                <span class="timeline-dates">${formatDate(kickOff)} - ${formatDate(goLive)}</span>
+                            </div>
+                        ` : ''}
+                        ${isTesting ? `
+                            <div class="timeline-bar">
+                                <span class="timeline-label">Testing:</span>
+                                <div class="timeline-visual" style="background: linear-gradient(90deg, var(--warning-color), var(--success-color));"></div>
+                                <span class="timeline-dates">${formatDate(testStart)} - ${formatDate(testEnd)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        document.getElementById('panelProjects').innerHTML = projectsHTML;
+    }
+
+    // Update navigation buttons
+    const prevBtn = document.querySelector('.btn-nav:first-child');
+    const nextBtn = document.querySelector('.btn-nav:last-child');
+
+    if (prevBtn && nextBtn) {
+        prevBtn.disabled = sidePanelState.monthIndex === 0;
+        nextBtn.disabled = sidePanelState.monthIndex === sidePanelState.allMonths.length - 1;
     }
 }
