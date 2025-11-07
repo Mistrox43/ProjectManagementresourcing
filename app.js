@@ -31,53 +31,73 @@ function handleFileUpload(event) {
     reader.readAsText(file);
 }
 
-// Parse CSV data with proper handling of quoted fields
+// Parse CSV data with proper handling of quoted fields and multi-line cells
 function parseCSV(csvText) {
-    const lines = csvText.trim().split(/\r?\n/);
+    const rows = [];
+    const fields = [];
+    let currentField = '';
+    let insideQuotes = false;
 
-    // Parse a single CSV line, handling quoted fields properly
-    function parseLine(line) {
-        const fields = [];
-        let currentField = '';
-        let insideQuotes = false;
+    // Parse the entire CSV text character by character
+    for (let i = 0; i < csvText.length; i++) {
+        const char = csvText[i];
+        const nextChar = csvText[i + 1];
 
-        for (let i = 0; i < line.length; i++) {
-            const char = line[i];
-            const nextChar = line[i + 1];
-
-            if (char === '"') {
-                if (insideQuotes && nextChar === '"') {
-                    // Escaped quote inside quoted field
-                    currentField += '"';
-                    i++; // Skip next quote
-                } else {
-                    // Toggle quote state
-                    insideQuotes = !insideQuotes;
-                }
-            } else if (char === ',' && !insideQuotes) {
-                // End of field
-                fields.push(currentField.trim());
-                currentField = '';
+        if (char === '"') {
+            if (insideQuotes && nextChar === '"') {
+                // Escaped quote inside quoted field
+                currentField += '"';
+                i++; // Skip next quote
             } else {
-                currentField += char;
+                // Toggle quote state
+                insideQuotes = !insideQuotes;
             }
+        } else if (char === ',' && !insideQuotes) {
+            // End of field
+            fields.push(currentField.trim());
+            currentField = '';
+        } else if ((char === '\n' || (char === '\r' && nextChar === '\n')) && !insideQuotes) {
+            // End of row (only when not inside quotes)
+            fields.push(currentField.trim());
+
+            // Only add non-empty rows
+            if (fields.some(f => f !== '')) {
+                rows.push([...fields]);
+            }
+
+            fields.length = 0;
+            currentField = '';
+
+            // Skip \n if we just processed \r
+            if (char === '\r' && nextChar === '\n') {
+                i++;
+            }
+        } else {
+            // Add character to current field (including newlines inside quotes)
+            currentField += char;
         }
-
-        // Add the last field
-        fields.push(currentField.trim());
-
-        return fields;
     }
 
-    // Parse header
-    const headers = parseLine(lines[0]);
+    // Add the last field and row if there's any remaining data
+    if (currentField || fields.length > 0) {
+        fields.push(currentField.trim());
+        if (fields.some(f => f !== '')) {
+            rows.push([...fields]);
+        }
+    }
+
+    // First row is the header
+    if (rows.length === 0) {
+        console.error('No data found in CSV');
+        return;
+    }
+
+    const headers = rows[0];
 
     // Parse data rows
     projectData = [];
-    for (let i = 1; i < lines.length; i++) {
-        if (lines[i].trim() === '') continue;
-
-        const values = parseLine(lines[i]);
+    for (let i = 1; i < rows.length; i++) {
+        const values = rows[i];
         const row = {};
 
         headers.forEach((header, index) => {
