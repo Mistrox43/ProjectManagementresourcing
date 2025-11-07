@@ -195,6 +195,10 @@ function createCharts() {
     createTimelineChart();
     createLeadWorkloadChart();
     createSpecialistWorkloadChart();
+    populateLeadTimelineSelect();
+    populateSpecialistTimelineSelect();
+    createLeadTimelineChart();
+    createSpecialistTimelineChart();
     createRegionChart();
     createStatusChart();
     createTypeChart();
@@ -451,6 +455,314 @@ function createSpecialistWorkloadChart() {
                     beginAtZero: true,
                     ticks: {
                         stepSize: 1
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Populate Lead Timeline Select
+function populateLeadTimelineSelect() {
+    const leads = [...new Set(filteredData.map(p => p['OH Project Lead']).filter(l => l))].sort();
+    const select = document.getElementById('leadTimelineSelect');
+    select.innerHTML = leads.map(lead =>
+        `<option value="${lead}" selected>${lead}</option>`
+    ).join('');
+}
+
+// Populate Specialist Timeline Select
+function populateSpecialistTimelineSelect() {
+    const specialistSet = new Set();
+    filteredData.forEach(project => {
+        const specialists = project['OH Specialist(s)'];
+        if (specialists) {
+            const specialistList = specialists.split(/[;,]/).map(s => s.trim()).filter(s => s);
+            specialistList.forEach(s => specialistSet.add(s));
+        }
+    });
+    const specialists = [...specialistSet].sort();
+    const select = document.getElementById('specialistTimelineSelect');
+    select.innerHTML = specialists.map(specialist =>
+        `<option value="${specialist}" selected>${specialist}</option>`
+    ).join('');
+}
+
+// Select/Deselect functions for Lead Timeline
+function selectAllLeads() {
+    const select = document.getElementById('leadTimelineSelect');
+    for (let option of select.options) {
+        option.selected = true;
+    }
+    createLeadTimelineChart();
+}
+
+function deselectAllLeads() {
+    const select = document.getElementById('leadTimelineSelect');
+    for (let option of select.options) {
+        option.selected = false;
+    }
+    createLeadTimelineChart();
+}
+
+// Select/Deselect functions for Specialist Timeline
+function selectAllSpecialists() {
+    const select = document.getElementById('specialistTimelineSelect');
+    for (let option of select.options) {
+        option.selected = true;
+    }
+    createSpecialistTimelineChart();
+}
+
+function deselectAllSpecialists() {
+    const select = document.getElementById('specialistTimelineSelect');
+    for (let option of select.options) {
+        option.selected = false;
+    }
+    createSpecialistTimelineChart();
+}
+
+// Project Lead Workload Over Time Chart
+function createLeadTimelineChart() {
+    destroyChart('leadTimelineChart');
+
+    const select = document.getElementById('leadTimelineSelect');
+    const selectedLeads = Array.from(select.selectedOptions).map(opt => opt.value);
+
+    if (selectedLeads.length === 0) {
+        return;
+    }
+
+    // Get all projects with dates for selected leads
+    const leadProjects = {};
+    selectedLeads.forEach(lead => {
+        leadProjects[lead] = filteredData
+            .filter(p => p['OH Project Lead'] === lead)
+            .map(project => ({
+                kickOff: parseDate(project['Kick-Off Date']),
+                goLive: parseDate(project['OH Go-Live Date']),
+                project: project
+            }))
+            .filter(p => p.kickOff && p.goLive);
+    });
+
+    // Find overall date range
+    const allDates = [];
+    Object.values(leadProjects).forEach(projects => {
+        projects.forEach(p => {
+            allDates.push(p.kickOff, p.goLive);
+        });
+    });
+
+    if (allDates.length === 0) {
+        return;
+    }
+
+    const minDate = new Date(Math.min(...allDates));
+    const maxDate = new Date(Math.max(...allDates));
+
+    // Generate all months in the range
+    const months = [];
+    const currentMonth = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+    const endMonth = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+
+    while (currentMonth <= endMonth) {
+        months.push(new Date(currentMonth));
+        currentMonth.setMonth(currentMonth.getMonth() + 1);
+    }
+
+    // Create datasets for each lead
+    const colors = [
+        '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+        '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#14b8a6'
+    ];
+
+    const datasets = selectedLeads.map((lead, index) => {
+        const projectCounts = months.map(month => {
+            const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+            return leadProjects[lead].filter(p => {
+                return p.kickOff <= monthEnd && p.goLive >= month;
+            }).length;
+        });
+
+        return {
+            label: lead,
+            data: projectCounts,
+            borderColor: colors[index % colors.length],
+            backgroundColor: colors[index % colors.length] + '20',
+            tension: 0.4,
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 5
+        };
+    });
+
+    const labels = months.map(m => `${getMonthName(m.getMonth())} ${m.getFullYear()}`);
+
+    const ctx = document.getElementById('leadTimelineChart').getContext('2d');
+    charts.leadTimelineChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    },
+                    title: {
+                        display: true,
+                        text: 'Concurrent Projects'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Timeline'
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Specialist Workload Over Time Chart
+function createSpecialistTimelineChart() {
+    destroyChart('specialistTimelineChart');
+
+    const select = document.getElementById('specialistTimelineSelect');
+    const selectedSpecialists = Array.from(select.selectedOptions).map(opt => opt.value);
+
+    if (selectedSpecialists.length === 0) {
+        return;
+    }
+
+    // Get all projects with dates for selected specialists
+    const specialistProjects = {};
+    selectedSpecialists.forEach(specialist => {
+        specialistProjects[specialist] = [];
+        filteredData.forEach(project => {
+            const specialists = project['OH Specialist(s)'];
+            if (specialists) {
+                const specialistList = specialists.split(/[;,]/).map(s => s.trim()).filter(s => s);
+                if (specialistList.includes(specialist)) {
+                    const kickOff = parseDate(project['Kick-Off Date']);
+                    const goLive = parseDate(project['OH Go-Live Date']);
+                    if (kickOff && goLive) {
+                        specialistProjects[specialist].push({
+                            kickOff: kickOff,
+                            goLive: goLive,
+                            project: project
+                        });
+                    }
+                }
+            }
+        });
+    });
+
+    // Find overall date range
+    const allDates = [];
+    Object.values(specialistProjects).forEach(projects => {
+        projects.forEach(p => {
+            allDates.push(p.kickOff, p.goLive);
+        });
+    });
+
+    if (allDates.length === 0) {
+        return;
+    }
+
+    const minDate = new Date(Math.min(...allDates));
+    const maxDate = new Date(Math.max(...allDates));
+
+    // Generate all months in the range
+    const months = [];
+    const currentMonth = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+    const endMonth = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+
+    while (currentMonth <= endMonth) {
+        months.push(new Date(currentMonth));
+        currentMonth.setMonth(currentMonth.getMonth() + 1);
+    }
+
+    // Create datasets for each specialist
+    const colors = [
+        '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+        '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#14b8a6'
+    ];
+
+    const datasets = selectedSpecialists.map((specialist, index) => {
+        const projectCounts = months.map(month => {
+            const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+            return specialistProjects[specialist].filter(p => {
+                return p.kickOff <= monthEnd && p.goLive >= month;
+            }).length;
+        });
+
+        return {
+            label: specialist,
+            data: projectCounts,
+            borderColor: colors[index % colors.length],
+            backgroundColor: colors[index % colors.length] + '20',
+            tension: 0.4,
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 5
+        };
+    });
+
+    const labels = months.map(m => `${getMonthName(m.getMonth())} ${m.getFullYear()}`);
+
+    const ctx = document.getElementById('specialistTimelineChart').getContext('2d');
+    charts.specialistTimelineChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    },
+                    title: {
+                        display: true,
+                        text: 'Concurrent Projects'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Timeline'
                     }
                 }
             }
