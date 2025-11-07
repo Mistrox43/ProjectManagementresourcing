@@ -119,7 +119,8 @@ function populateFilters() {
 
 function populateSelect(id, options) {
     const select = document.getElementById(id);
-    const currentValue = select.value;
+    // Get currently selected values
+    const currentValues = Array.from(select.selectedOptions).map(opt => opt.value);
 
     // Keep "All" option
     select.innerHTML = `<option value="all">${select.options[0].text}</option>`;
@@ -131,8 +132,16 @@ function populateSelect(id, options) {
         select.appendChild(opt);
     });
 
-    if (currentValue && options.includes(currentValue)) {
-        select.value = currentValue;
+    // Restore previous selections if they still exist in the new options
+    if (currentValues.length > 0) {
+        Array.from(select.options).forEach(option => {
+            if (currentValues.includes(option.value) && (option.value === 'all' || options.includes(option.value))) {
+                option.selected = true;
+            }
+        });
+    } else {
+        // If nothing was selected, select "All" by default
+        select.options[0].selected = true;
     }
 }
 
@@ -1220,18 +1229,19 @@ function filterTable() {
 
 // Apply filters
 function applyFilters() {
-    const regionFilter = document.getElementById('regionFilter').value;
-    const statusFilter = document.getElementById('statusFilter').value;
-    const typeFilter = document.getElementById('typeFilter').value;
-    const lobFilter = document.getElementById('lobFilter').value;
-    const leadFilter = document.getElementById('leadFilter').value;
+    // Get selected values from multi-select filters
+    const regionFilter = Array.from(document.getElementById('regionFilter').selectedOptions).map(opt => opt.value);
+    const statusFilter = Array.from(document.getElementById('statusFilter').selectedOptions).map(opt => opt.value);
+    const typeFilter = Array.from(document.getElementById('typeFilter').selectedOptions).map(opt => opt.value);
+    const lobFilter = Array.from(document.getElementById('lobFilter').selectedOptions).map(opt => opt.value);
+    const leadFilter = Array.from(document.getElementById('leadFilter').selectedOptions).map(opt => opt.value);
 
     filteredData = projectData.filter(project => {
-        return (regionFilter === 'all' || project['OH Region'] === regionFilter) &&
-               (statusFilter === 'all' || project['Project Status'] === statusFilter) &&
-               (typeFilter === 'all' || project['Project Type'] === typeFilter) &&
-               (lobFilter === 'all' || project['LOB'] === lobFilter) &&
-               (leadFilter === 'all' || project['OH Project Lead'] === leadFilter);
+        return (regionFilter.includes('all') || regionFilter.includes(project['OH Region'])) &&
+               (statusFilter.includes('all') || statusFilter.includes(project['Project Status'])) &&
+               (typeFilter.includes('all') || typeFilter.includes(project['Project Type'])) &&
+               (lobFilter.includes('all') || lobFilter.includes(project['LOB'])) &&
+               (leadFilter.includes('all') || leadFilter.includes(project['OH Project Lead']));
     });
 
     updateMetrics();
@@ -1241,11 +1251,14 @@ function applyFilters() {
 
 // Clear all filters
 function clearFilters() {
-    document.getElementById('regionFilter').value = 'all';
-    document.getElementById('statusFilter').value = 'all';
-    document.getElementById('typeFilter').value = 'all';
-    document.getElementById('lobFilter').value = 'all';
-    document.getElementById('leadFilter').value = 'all';
+    // Clear multi-select filters by deselecting all and selecting only "all"
+    ['regionFilter', 'statusFilter', 'typeFilter', 'lobFilter', 'leadFilter'].forEach(filterId => {
+        const select = document.getElementById(filterId);
+        Array.from(select.options).forEach(option => {
+            option.selected = (option.value === 'all');
+        });
+    });
+
     document.getElementById('searchBox').value = '';
 
     filteredData = [...projectData];
