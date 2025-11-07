@@ -162,7 +162,7 @@ function createCharts() {
     createTestingChart();
 }
 
-// Timeline Chart - Concurrent Active Projects over time
+// Timeline Chart - Concurrent Active Projects and Testing over time
 function createTimelineChart() {
     destroyChart('timelineChart');
 
@@ -171,9 +171,20 @@ function createTimelineChart() {
         .map(project => ({
             kickOff: parseDate(project['Kick-Off Date']),
             goLive: parseDate(project['OH Go-Live Date']),
+            testStart: parseDate(project['Testing Start']),
+            testEnd: parseDate(project['Testing End']),
             project: project
         }))
         .filter(p => p.kickOff && p.goLive);
+
+    // Collect projects with valid testing dates
+    const projectsWithTestingDates = filteredData
+        .map(project => ({
+            testStart: parseDate(project['Testing Start']),
+            testEnd: parseDate(project['Testing End']),
+            project: project
+        }))
+        .filter(p => p.testStart && p.testEnd);
 
     if (projectsWithDates.length === 0) {
         // No valid date data, show empty chart
@@ -195,11 +206,17 @@ function createTimelineChart() {
         return;
     }
 
-    // Find the overall date range
-    const allKickOffs = projectsWithDates.map(p => p.kickOff);
-    const allGoLives = projectsWithDates.map(p => p.goLive);
-    const minDate = new Date(Math.min(...allKickOffs));
-    const maxDate = new Date(Math.max(...allGoLives));
+    // Find the overall date range (including testing dates)
+    const allDates = [];
+    projectsWithDates.forEach(p => {
+        allDates.push(p.kickOff, p.goLive);
+    });
+    projectsWithTestingDates.forEach(p => {
+        allDates.push(p.testStart, p.testEnd);
+    });
+
+    const minDate = new Date(Math.min(...allDates));
+    const maxDate = new Date(Math.max(...allDates));
 
     // Generate all months in the range
     const months = [];
@@ -211,8 +228,7 @@ function createTimelineChart() {
         currentMonth.setMonth(currentMonth.getMonth() + 1);
     }
 
-    // For each month, count how many projects are active
-    // A project is active if: kickOff <= month AND goLive >= month
+    // For each month, count how many projects are active (Kick-Off to Go-Live)
     const activeProjectCounts = months.map(month => {
         const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0); // Last day of month
 
@@ -220,6 +236,17 @@ function createTimelineChart() {
             // Project is active if it started on or before the end of this month
             // AND ends on or after the start of this month
             return p.kickOff <= monthEnd && p.goLive >= month;
+        }).length;
+    });
+
+    // For each month, count how many projects are in testing (Testing Start to Testing End)
+    const testingProjectCounts = months.map(month => {
+        const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0); // Last day of month
+
+        return projectsWithTestingDates.filter(p => {
+            // Project is in testing if it started testing on or before the end of this month
+            // AND finished testing on or after the start of this month
+            return p.testStart <= monthEnd && p.testEnd >= month;
         }).length;
     });
 
@@ -231,17 +258,30 @@ function createTimelineChart() {
         type: 'line',
         data: {
             labels: labels,
-            datasets: [{
-                label: 'Active Projects',
-                data: activeProjectCounts,
-                borderColor: '#2563eb',
-                backgroundColor: 'rgba(37, 99, 235, 0.1)',
-                tension: 0.4,
-                fill: true,
-                borderWidth: 2,
-                pointRadius: 3,
-                pointHoverRadius: 5
-            }]
+            datasets: [
+                {
+                    label: 'Active Projects',
+                    data: activeProjectCounts,
+                    borderColor: '#2563eb',
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointHoverRadius: 5
+                },
+                {
+                    label: 'Projects in Testing',
+                    data: testingProjectCounts,
+                    borderColor: '#f59e0b',
+                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointHoverRadius: 5
+                }
+            ]
         },
         options: {
             responsive: true,
@@ -252,11 +292,8 @@ function createTimelineChart() {
                     position: 'top'
                 },
                 tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return `Active Projects: ${context.parsed.y}`;
-                        }
-                    }
+                    mode: 'index',
+                    intersect: false
                 }
             },
             scales: {
@@ -267,7 +304,7 @@ function createTimelineChart() {
                     },
                     title: {
                         display: true,
-                        text: 'Number of Active Projects'
+                        text: 'Number of Projects'
                     }
                 },
                 x: {
