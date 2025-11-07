@@ -344,6 +344,11 @@ header h1 {
     gap: 0.5rem;
 }
 
+.radio-group.horizontal {
+    flex-direction: row;
+    gap: 1rem;
+}
+
 .radio-label {
     display: flex;
     align-items: center;

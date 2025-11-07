@@ -85,7 +85,26 @@
             <div class="charts-container">
                 <!-- Projects Timeline -->
                 <div class="chart-card full-width">
-                    <h3>Active Projects Over Time (Concurrent Workload)</h3>
+                    <div class="chart-header">
+                        <h3>Active Projects Over Time (Concurrent Workload)</h3>
+                        <div class="chart-controls">
+                            <label>Granularity:</label>
+                            <div class="radio-group horizontal">
+                                <label class="radio-label">
+                                    <input type="radio" name="mainTimelineGranularity" value="day" onchange="createTimelineChart()">
+                                    <span>Day</span>
+                                </label>
+                                <label class="radio-label">
+                                    <input type="radio" name="mainTimelineGranularity" value="week" onchange="createTimelineChart()">
+                                    <span>Week</span>
+                                </label>
+                                <label class="radio-label">
+                                    <input type="radio" name="mainTimelineGranularity" value="month" checked onchange="createTimelineChart()">
+                                    <span>Month</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
                     <canvas id="timelineChart"></canvas>
                 </div>
 
@@ -124,6 +143,23 @@
                                 </div>
                             </div>
                             <div class="chart-controls">
+                                <label>Granularity:</label>
+                                <div class="radio-group horizontal">
+                                    <label class="radio-label">
+                                        <input type="radio" name="leadTimelineGranularity" value="day" onchange="createLeadTimelineChart()">
+                                        <span>Day</span>
+                                    </label>
+                                    <label class="radio-label">
+                                        <input type="radio" name="leadTimelineGranularity" value="week" onchange="createLeadTimelineChart()">
+                                        <span>Week</span>
+                                    </label>
+                                    <label class="radio-label">
+                                        <input type="radio" name="leadTimelineGranularity" value="month" checked onchange="createLeadTimelineChart()">
+                                        <span>Month</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="chart-controls">
                                 <label>Select Leads to Display:</label>
                                 <select id="leadTimelineSelect" multiple size="5" onchange="createLeadTimelineChart()">
                                 </select>
@@ -154,6 +190,23 @@
                                     <label class="radio-label">
                                         <input type="radio" name="specialistTimelineType" value="both" onchange="createSpecialistTimelineChart()">
                                         <span>Both</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="chart-controls">
+                                <label>Granularity:</label>
+                                <div class="radio-group horizontal">
+                                    <label class="radio-label">
+                                        <input type="radio" name="specialistTimelineGranularity" value="day" onchange="createSpecialistTimelineChart()">
+                                        <span>Day</span>
+                                    </label>
+                                    <label class="radio-label">
+                                        <input type="radio" name="specialistTimelineGranularity" value="week" onchange="createSpecialistTimelineChart()">
+                                        <span>Week</span>
+                                    </label>
+                                    <label class="radio-label">
+                                        <input type="radio" name="specialistTimelineGranularity" value="month" checked onchange="createSpecialistTimelineChart()">
+                                        <span>Month</span>
                                     </label>
                                 </div>
                             </div>

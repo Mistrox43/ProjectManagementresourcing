@@ -229,6 +229,9 @@ function createCharts() {
 function createTimelineChart() {
     destroyChart('timelineChart');
 
+    // Get selected granularity
+    const granularity = document.querySelector('input[name="mainTimelineGranularity"]:checked')?.value || 'month';
+
     // Collect all projects with valid kick-off and go-live dates
     const projectsWithDates = filteredData
         .map(project => ({
@@ -281,40 +284,33 @@ function createTimelineChart() {
     const minDate = new Date(Math.min(...allDates));
     const maxDate = new Date(Math.max(...allDates));
 
-    // Generate all months in the range
-    const months = [];
-    const currentMonth = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
-    const endMonth = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+    // Generate date ranges based on granularity
+    const periods = generateDateRanges(minDate, maxDate, granularity);
 
-    while (currentMonth <= endMonth) {
-        months.push(new Date(currentMonth));
-        currentMonth.setMonth(currentMonth.getMonth() + 1);
-    }
-
-    // For each month, count how many projects are active (Kick-Off to Go-Live)
-    const activeProjectCounts = months.map(month => {
-        const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0); // Last day of month
+    // For each period, count how many projects are active (Kick-Off to Go-Live)
+    const activeProjectCounts = periods.map(period => {
+        const periodEnd = getPeriodEnd(period, granularity);
 
         return projectsWithDates.filter(p => {
-            // Project is active if it started on or before the end of this month
-            // AND ends on or after the start of this month
-            return p.kickOff <= monthEnd && p.goLive >= month;
+            // Project is active if it started on or before the end of this period
+            // AND ends on or after the start of this period
+            return p.kickOff <= periodEnd && p.goLive >= period;
         }).length;
     });
 
-    // For each month, count how many projects are in testing (Testing Start to Testing End)
-    const testingProjectCounts = months.map(month => {
-        const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0); // Last day of month
+    // For each period, count how many projects are in testing (Testing Start to Testing End)
+    const testingProjectCounts = periods.map(period => {
+        const periodEnd = getPeriodEnd(period, granularity);
 
         return projectsWithTestingDates.filter(p => {
-            // Project is in testing if it started testing on or before the end of this month
-            // AND finished testing on or after the start of this month
-            return p.testStart <= monthEnd && p.testEnd >= month;
+            // Project is in testing if it started testing on or before the end of this period
+            // AND finished testing on or after the start of this period
+            return p.testStart <= periodEnd && p.testEnd >= period;
         }).length;
     });
 
-    // Format labels
-    const labels = months.map(m => `${getMonthName(m.getMonth())} ${m.getFullYear()}`);
+    // Format labels based on granularity
+    const labels = periods.map(p => formatPeriodLabel(p, granularity));
 
     const ctx = document.getElementById('timelineChart').getContext('2d');
     charts.timelineChart = new Chart(ctx, {
@@ -351,8 +347,8 @@ function createTimelineChart() {
             maintainAspectRatio: true,
             onClick: (event, elements) => {
                 if (elements.length > 0) {
-                    const monthIndex = elements[0].index;
-                    openSidePanel('main-timeline', monthIndex, months, { activeProjectCounts, testingProjectCounts });
+                    const periodIndex = elements[0].index;
+                    openSidePanel('main-timeline', periodIndex, periods, { activeProjectCounts, testingProjectCounts });
                 }
             },
             plugins: {
@@ -554,8 +550,9 @@ function createLeadTimelineChart() {
     const select = document.getElementById('leadTimelineSelect');
     const selectedLeads = Array.from(select.selectedOptions).map(opt => opt.value);
 
-    // Get selected timeline type
+    // Get selected timeline type and granularity
     const timelineType = document.querySelector('input[name="leadTimelineType"]:checked').value;
+    const granularity = document.querySelector('input[name="leadTimelineGranularity"]:checked')?.value || 'month';
 
     if (selectedLeads.length === 0) {
         return;
@@ -613,15 +610,8 @@ function createLeadTimelineChart() {
     const minDate = new Date(Math.min(...allDates));
     const maxDate = new Date(Math.max(...allDates));
 
-    // Generate all months in the range
-    const months = [];
-    const currentMonth = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
-    const endMonth = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
-
-    while (currentMonth <= endMonth) {
-        months.push(new Date(currentMonth));
-        currentMonth.setMonth(currentMonth.getMonth() + 1);
-    }
+    // Generate date ranges based on granularity
+    const periods = generateDateRanges(minDate, maxDate, granularity);
 
     // Create datasets based on timeline type
     const colors = [
@@ -635,10 +625,10 @@ function createLeadTimelineChart() {
     selectedLeads.forEach((lead, leadIndex) => {
         // Project lifecycle line
         if (timelineType === 'project' || timelineType === 'both') {
-            const projectCounts = months.map(month => {
-                const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+            const projectCounts = periods.map(period => {
+                const periodEnd = getPeriodEnd(period, granularity);
                 return leadProjectData[lead].filter(p => {
-                    return p.kickOff <= monthEnd && p.goLive >= month;
+                    return p.kickOff <= periodEnd && p.goLive >= period;
                 }).length;
             });
 
@@ -657,10 +647,10 @@ function createLeadTimelineChart() {
 
         // Testing phase line
         if (timelineType === 'testing' || timelineType === 'both') {
-            const testingCounts = months.map(month => {
-                const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+            const testingCounts = periods.map(period => {
+                const periodEnd = getPeriodEnd(period, granularity);
                 return leadTestingData[lead].filter(p => {
-                    return p.testStart <= monthEnd && p.testEnd >= month;
+                    return p.testStart <= periodEnd && p.testEnd >= period;
                 }).length;
             });
 
@@ -678,7 +668,7 @@ function createLeadTimelineChart() {
         }
     });
 
-    const labels = months.map(m => `${getMonthName(m.getMonth())} ${m.getFullYear()}`);
+    const labels = periods.map(p => formatPeriodLabel(p, granularity));
 
     const ctx = document.getElementById('leadTimelineChart').getContext('2d');
     charts.leadTimelineChart = new Chart(ctx, {
@@ -692,8 +682,8 @@ function createLeadTimelineChart() {
             maintainAspectRatio: true,
             onClick: (event, elements) => {
                 if (elements.length > 0) {
-                    const monthIndex = elements[0].index;
-                    openSidePanel('lead-timeline', monthIndex, months, { selectedLeads, timelineType });
+                    const periodIndex = elements[0].index;
+                    openSidePanel('lead-timeline', periodIndex, periods, { selectedLeads, timelineType });
                 }
             },
             plugins: {
@@ -735,8 +725,9 @@ function createSpecialistTimelineChart() {
     const select = document.getElementById('specialistTimelineSelect');
     const selectedSpecialists = Array.from(select.selectedOptions).map(opt => opt.value);
 
-    // Get selected timeline type
+    // Get selected timeline type and granularity
     const timelineType = document.querySelector('input[name="specialistTimelineType"]:checked').value;
+    const granularity = document.querySelector('input[name="specialistTimelineGranularity"]:checked')?.value || 'month';
 
     if (selectedSpecialists.length === 0) {
         return;
@@ -807,15 +798,8 @@ function createSpecialistTimelineChart() {
     const minDate = new Date(Math.min(...allDates));
     const maxDate = new Date(Math.max(...allDates));
 
-    // Generate all months in the range
-    const months = [];
-    const currentMonth = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
-    const endMonth = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
-
-    while (currentMonth <= endMonth) {
-        months.push(new Date(currentMonth));
-        currentMonth.setMonth(currentMonth.getMonth() + 1);
-    }
+    // Generate date ranges based on granularity
+    const periods = generateDateRanges(minDate, maxDate, granularity);
 
     // Create datasets based on timeline type
     const colors = [
@@ -828,10 +812,10 @@ function createSpecialistTimelineChart() {
     selectedSpecialists.forEach((specialist, specialistIndex) => {
         // Project lifecycle line
         if (timelineType === 'project' || timelineType === 'both') {
-            const projectCounts = months.map(month => {
-                const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+            const projectCounts = periods.map(period => {
+                const periodEnd = getPeriodEnd(period, granularity);
                 return specialistProjectData[specialist].filter(p => {
-                    return p.kickOff <= monthEnd && p.goLive >= month;
+                    return p.kickOff <= periodEnd && p.goLive >= period;
                 }).length;
             });
 
@@ -850,10 +834,10 @@ function createSpecialistTimelineChart() {
 
         // Testing phase line
         if (timelineType === 'testing' || timelineType === 'both') {
-            const testingCounts = months.map(month => {
-                const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+            const testingCounts = periods.map(period => {
+                const periodEnd = getPeriodEnd(period, granularity);
                 return specialistTestingData[specialist].filter(p => {
-                    return p.testStart <= monthEnd && p.testEnd >= month;
+                    return p.testStart <= periodEnd && p.testEnd >= period;
                 }).length;
             });
 
@@ -871,7 +855,7 @@ function createSpecialistTimelineChart() {
         }
     });
 
-    const labels = months.map(m => `${getMonthName(m.getMonth())} ${m.getFullYear()}`);
+    const labels = periods.map(p => formatPeriodLabel(p, granularity));
 
     const ctx = document.getElementById('specialistTimelineChart').getContext('2d');
     charts.specialistTimelineChart = new Chart(ctx, {
@@ -885,8 +869,8 @@ function createSpecialistTimelineChart() {
             maintainAspectRatio: true,
             onClick: (event, elements) => {
                 if (elements.length > 0) {
-                    const monthIndex = elements[0].index;
-                    openSidePanel('specialist-timeline', monthIndex, months, { selectedSpecialists, timelineType });
+                    const periodIndex = elements[0].index;
+                    openSidePanel('specialist-timeline', periodIndex, periods, { selectedSpecialists, timelineType });
                 }
             },
             plugins: {
@@ -1337,6 +1321,76 @@ function destroyChart(chartId) {
     if (charts[chartId]) {
         charts[chartId].destroy();
     }
+}
+
+// Granularity Helper Functions
+function generateDateRanges(minDate, maxDate, granularity) {
+    const ranges = [];
+    let currentDate = new Date(minDate);
+
+    if (granularity === 'day') {
+        // Generate daily ranges
+        while (currentDate <= maxDate) {
+            ranges.push(new Date(currentDate));
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
+    } else if (granularity === 'week') {
+        // Generate weekly ranges (start on Monday)
+        // First, find the Monday of the week containing minDate
+        const firstMonday = new Date(minDate);
+        const dayOfWeek = firstMonday.getDay();
+        const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        firstMonday.setDate(firstMonday.getDate() + daysToMonday);
+
+        currentDate = new Date(firstMonday);
+        while (currentDate <= maxDate) {
+            ranges.push(new Date(currentDate));
+            currentDate.setDate(currentDate.getDate() + 7);
+        }
+    } else {
+        // Generate monthly ranges (default)
+        currentDate = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+        const endMonth = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+
+        while (currentDate <= endMonth) {
+            ranges.push(new Date(currentDate));
+            currentDate.setMonth(currentDate.getMonth() + 1);
+        }
+    }
+
+    return ranges;
+}
+
+function formatPeriodLabel(date, granularity) {
+    if (granularity === 'day') {
+        return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+    } else if (granularity === 'week') {
+        const weekEnd = new Date(date);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        return `${date.getMonth() + 1}/${date.getDate()}-${weekEnd.getMonth() + 1}/${weekEnd.getDate()}`;
+    } else {
+        return `${getMonthName(date.getMonth())} ${date.getFullYear()}`;
+    }
+}
+
+function getPeriodEnd(date, granularity) {
+    const endDate = new Date(date);
+
+    if (granularity === 'day') {
+        // End of the same day
+        endDate.setHours(23, 59, 59, 999);
+    } else if (granularity === 'week') {
+        // End of the week (Sunday)
+        endDate.setDate(endDate.getDate() + 6);
+        endDate.setHours(23, 59, 59, 999);
+    } else {
+        // End of the month
+        endDate.setMonth(endDate.getMonth() + 1);
+        endDate.setDate(0);
+        endDate.setHours(23, 59, 59, 999);
+    }
+
+    return endDate;
 }
 
 // Side Panel State
