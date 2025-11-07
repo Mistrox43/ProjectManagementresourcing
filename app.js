@@ -162,6 +162,13 @@ function updateMetrics() {
         return testStart && testEnd && testStart <= now && testEnd >= now;
     }).length;
 
+    // Calculate projects with missing dates
+    const missingGoLive = filteredData.filter(p => !parseDate(p['OH Go-Live Date'])).length;
+    const missingKickOff = filteredData.filter(p => !parseDate(p['Kick-Off Date'])).length;
+    const missingBothDates = filteredData.filter(p =>
+        !parseDate(p['OH Go-Live Date']) && !parseDate(p['Kick-Off Date'])
+    ).length;
+
     // Date range
     const dates = filteredData.map(p => parseDate(p['OH Go-Live Date'])).filter(d => d);
     let dateRangeText = 'No date data';
@@ -177,6 +184,7 @@ function updateMetrics() {
         { label: 'Active Projects', value: activeProjects, subtitle: 'In progress' },
         { label: 'Upcoming Go-Lives', value: upcomingGoLives, subtitle: 'Next 60 days' },
         { label: 'In Testing', value: inTesting, subtitle: 'Currently testing' },
+        { label: 'Missing Date Data', value: missingBothDates, subtitle: `Go-Live: ${missingGoLive}, Kick-Off: ${missingKickOff}` },
         { label: 'Project Leads', value: uniqueLeads, subtitle: 'Unique leads' },
         { label: 'Specialists', value: uniqueSpecialists, subtitle: 'Unique specialists' }
     ];
