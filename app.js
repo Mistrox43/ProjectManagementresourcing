@@ -3,11 +3,99 @@ let projectData = [];
 let filteredData = [];
 let charts = {};
 
+// Performance optimization variables
+let parsedDateCache = new Map(); // Cache for parsed dates
+let filterDebounceTimer = null; // Debounce timer for filter changes
+let isUpdating = false; // Flag to prevent concurrent updates
+let pendingUpdate = false; // Flag to track if an update is pending
+
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
     const fileInput = document.getElementById('csvFileInput');
     fileInput.addEventListener('change', handleFileUpload);
 });
+
+// Optimized parseDate with caching
+function parseDateCached(dateString, projectId = '') {
+    if (!dateString) return null;
+
+    const cacheKey = `${projectId}_${dateString}`;
+
+    if (parsedDateCache.has(cacheKey)) {
+        return parsedDateCache.get(cacheKey);
+    }
+
+    const date = new Date(dateString);
+    const result = isNaN(date.getTime()) ? null : date;
+    parsedDateCache.set(cacheKey, result);
+
+    return result;
+}
+
+// Clear date cache when new data is loaded
+function clearDateCache() {
+    parsedDateCache.clear();
+}
+
+// Show loading indicator
+function showLoading(message = 'Updating...') {
+    let loader = document.getElementById('loadingIndicator');
+    if (!loader) {
+        loader = document.createElement('div');
+        loader.id = 'loadingIndicator';
+        loader.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(37, 99, 235, 0.95);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 10000;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        `;
+        loader.innerHTML = `
+            <div style="
+                width: 16px;
+                height: 16px;
+                border: 2px solid white;
+                border-top-color: transparent;
+                border-radius: 50%;
+                animation: spin 0.8s linear infinite;
+            "></div>
+            <span id="loadingMessage">${message}</span>
+        `;
+        document.body.appendChild(loader);
+
+        // Add animation keyframes if not already added
+        if (!document.getElementById('spinAnimation')) {
+            const style = document.createElement('style');
+            style.id = 'spinAnimation';
+            style.textContent = `
+                @keyframes spin {
+                    to { transform: rotate(360deg); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+    } else {
+        loader.style.display = 'flex';
+        document.getElementById('loadingMessage').textContent = message;
+    }
+}
+
+// Hide loading indicator
+function hideLoading() {
+    const loader = document.getElementById('loadingIndicator');
+    if (loader) {
+        loader.style.display = 'none';
+    }
+}
 
 // Handle CSV file upload
 function handleFileUpload(event) {
@@ -94,6 +182,9 @@ function parseCSV(csvText) {
 
     const headers = rows[0];
 
+    // Clear date cache when loading new data
+    clearDateCache();
+
     // Parse data rows
     projectData = [];
     for (let i = 1; i < rows.length; i++) {
@@ -103,6 +194,9 @@ function parseCSV(csvText) {
         headers.forEach((header, index) => {
             row[header] = values[index] || '';
         });
+
+        // Add unique ID for caching purposes
+        row.__id = i;
 
         // Only add row if it has meaningful data
         if (Object.values(row).some(v => v !== '')) {
@@ -165,70 +259,92 @@ function populateSelect(id, options) {
     }
 }
 
-// Update key metrics
+// Update key metrics - OPTIMIZED: Single pass through data
 function updateMetrics() {
     const metricsGrid = document.getElementById('metricsGrid');
 
-    const totalProjects = filteredData.length;
-    const activeProjects = filteredData.filter(p =>
-        p['Project Status'] && !p['Project Status'].toLowerCase().includes('complete') &&
-        !p['Project Status'].toLowerCase().includes('closed')
-    ).length;
-
-    const uniqueLeads = new Set(filteredData.map(p => p['OH Project Lead']).filter(l => l)).size;
-    const uniqueSpecialists = new Set(filteredData.map(p => p['OH Specialist(s)']).filter(s => s)).size;
-
-    // Calculate upcoming go-lives (next 60 days)
     const now = new Date();
     const sixtyDaysFromNow = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000));
-    const upcomingGoLives = filteredData.filter(p => {
-        const date = parseDate(p['OH Go-Live Date']);
-        return date && date > now && date <= sixtyDaysFromNow;
-    }).length;
 
-    // Calculate projects in testing
-    const inTesting = filteredData.filter(p => {
-        const testStart = parseDate(p['Testing Start']);
-        const testEnd = parseDate(p['Testing End']);
-        return testStart && testEnd && testStart <= now && testEnd >= now;
-    }).length;
+    // Initialize counters
+    let activeProjects = 0;
+    let upcomingGoLives = 0;
+    let inTesting = 0;
+    let missingGoLive = 0;
+    let missingKickOff = 0;
+    let missingAnyDate = 0;
+    let missingTestStart = 0;
+    let missingTestEnd = 0;
+    let missingAnyTestDate = 0;
+    let testingNotRequired = 0;
 
-    // Calculate projects with missing dates
-    const missingGoLive = filteredData.filter(p => !parseDate(p['OH Go-Live Date'])).length;
-    const missingKickOff = filteredData.filter(p => !parseDate(p['Kick-Off Date'])).length;
-    const missingAnyDate = filteredData.filter(p =>
-        !parseDate(p['OH Go-Live Date']) || !parseDate(p['Kick-Off Date'])
-    ).length;
+    const uniqueLeads = new Set();
+    const uniqueSpecialists = new Set();
+    const validDates = [];
 
-    // Calculate projects with missing testing dates
-    const missingTestStart = filteredData.filter(p => !parseDate(p['Testing Start'])).length;
-    const missingTestEnd = filteredData.filter(p => !parseDate(p['Testing End'])).length;
-    const missingAnyTestDate = filteredData.filter(p =>
-        !parseDate(p['Testing Start']) || !parseDate(p['Testing End'])
-    ).length;
+    // Single pass through all filtered data
+    filteredData.forEach(p => {
+        // Parse dates once with caching
+        const goLiveDate = parseDateCached(p['OH Go-Live Date'], p.__id);
+        const kickOffDate = parseDateCached(p['Kick-Off Date'], p.__id);
+        const testStartDate = parseDateCached(p['Testing Start'], p.__id);
+        const testEndDate = parseDateCached(p['Testing End'], p.__id);
 
-    // Calculate projects where testing may not be required
-    const testingNotRequired = filteredData.filter(p => {
-        const missingTestDates = !parseDate(p['Testing Start']) || !parseDate(p['Testing End']);
-        if (!missingTestDates) return false;
+        // Active projects
+        const status = p['Project Status'];
+        if (status && !status.toLowerCase().includes('complete') && !status.toLowerCase().includes('closed')) {
+            activeProjects++;
+        }
 
-        const prelimHL7 = (p['Prelim HL7'] || '').trim();
-        const cycle1 = (p['Cycle 1'] || '').trim();
-        const cycle2 = (p['Cycle 2'] || '').trim();
-        const eCTASCAV = (p['eCTAS CAV'] || '').trim();
+        // Unique leads and specialists
+        if (p['OH Project Lead']) uniqueLeads.add(p['OH Project Lead']);
+        if (p['OH Specialist(s)']) uniqueSpecialists.add(p['OH Specialist(s)']);
 
-        return prelimHL7 === 'Not Required' &&
-               cycle1 === 'Not Required' &&
-               cycle2 === 'Not Required' &&
-               eCTASCAV === 'Not Required';
-    }).length;
+        // Upcoming go-lives
+        if (goLiveDate && goLiveDate > now && goLiveDate <= sixtyDaysFromNow) {
+            upcomingGoLives++;
+        }
+
+        // Projects in testing
+        if (testStartDate && testEndDate && testStartDate <= now && testEndDate >= now) {
+            inTesting++;
+        }
+
+        // Missing dates
+        if (!goLiveDate) missingGoLive++;
+        if (!kickOffDate) missingKickOff++;
+        if (!goLiveDate || !kickOffDate) missingAnyDate++;
+
+        // Missing testing dates
+        if (!testStartDate) missingTestStart++;
+        if (!testEndDate) missingTestEnd++;
+        if (!testStartDate || !testEndDate) missingAnyTestDate++;
+
+        // Testing not required
+        const missingTestDates = !testStartDate || !testEndDate;
+        if (missingTestDates) {
+            const prelimHL7 = (p['Prelim HL7'] || '').trim();
+            const cycle1 = (p['Cycle 1'] || '').trim();
+            const cycle2 = (p['Cycle 2'] || '').trim();
+            const eCTASCAV = (p['eCTAS CAV'] || '').trim();
+
+            if (prelimHL7 === 'Not Required' && cycle1 === 'Not Required' &&
+                cycle2 === 'Not Required' && eCTASCAV === 'Not Required') {
+                testingNotRequired++;
+            }
+        }
+
+        // Collect valid dates for range
+        if (goLiveDate) validDates.push(goLiveDate);
+    });
+
+    const totalProjects = filteredData.length;
 
     // Date range
-    const dates = filteredData.map(p => parseDate(p['OH Go-Live Date'])).filter(d => d);
     let dateRangeText = 'No date data';
-    if (dates.length > 0) {
-        const minDate = new Date(Math.min(...dates));
-        const maxDate = new Date(Math.max(...dates));
+    if (validDates.length > 0) {
+        const minDate = new Date(Math.min(...validDates));
+        const maxDate = new Date(Math.max(...validDates));
         dateRangeText = `${formatDate(minDate)} - ${formatDate(maxDate)}`;
     }
     document.getElementById('dateRangeDisplay').textContent = dateRangeText;
@@ -240,8 +356,8 @@ function updateMetrics() {
         { label: 'In Testing', value: inTesting, subtitle: 'Currently testing', clickable: false },
         { label: 'Missing Date Data', value: missingAnyDate, subtitle: `Go-Live: ${missingGoLive}, Kick-Off: ${missingKickOff}`, clickable: true },
         { label: 'Missing Testing Dates', value: missingAnyTestDate, subtitle: `Test Start: ${missingTestStart}, Test End: ${missingTestEnd}, Not Required: ${testingNotRequired}`, clickable: true },
-        { label: 'Project Leads', value: uniqueLeads, subtitle: 'Unique leads', clickable: false },
-        { label: 'Specialists', value: uniqueSpecialists, subtitle: 'Unique specialists', clickable: false }
+        { label: 'Project Leads', value: uniqueLeads.size, subtitle: 'Unique leads', clickable: false },
+        { label: 'Specialists', value: uniqueSpecialists.size, subtitle: 'Unique specialists', clickable: false }
     ];
 
     metricsGrid.innerHTML = metrics.map(m => `
@@ -253,20 +369,57 @@ function updateMetrics() {
     `).join('');
 }
 
-// Create all charts
-function createCharts() {
-    createTimelineChart();
-    createLeadWorkloadChart();
-    createSpecialistWorkloadChart();
-    populateLeadTimelineSelect();
-    populateSpecialistTimelineSelect();
-    createLeadTimelineChart();
-    createSpecialistTimelineChart();
-    createRegionChart();
-    createStatusChart();
-    createTypeChart();
-    createGoLiveChart();
-    createTestingChart();
+// Create all charts - OPTIMIZED: Async with loading indicators
+async function createCharts() {
+    // Prevent concurrent updates
+    if (isUpdating) {
+        pendingUpdate = true;
+        return;
+    }
+
+    isUpdating = true;
+    showLoading('Updating charts...');
+
+    try {
+        // Use requestAnimationFrame to allow UI updates
+        await new Promise(resolve => requestAnimationFrame(resolve));
+
+        // Batch 1: Main timeline and workload charts
+        createTimelineChart();
+        createLeadWorkloadChart();
+        createSpecialistWorkloadChart();
+
+        await new Promise(resolve => requestAnimationFrame(resolve));
+
+        // Batch 2: Timeline selects and charts
+        populateLeadTimelineSelect();
+        populateSpecialistTimelineSelect();
+        createLeadTimelineChart();
+        createSpecialistTimelineChart();
+
+        await new Promise(resolve => requestAnimationFrame(resolve));
+
+        // Batch 3: Distribution charts
+        createRegionChart();
+        createStatusChart();
+        createTypeChart();
+
+        await new Promise(resolve => requestAnimationFrame(resolve));
+
+        // Batch 4: Date-based charts
+        createGoLiveChart();
+        createTestingChart();
+
+    } finally {
+        isUpdating = false;
+        hideLoading();
+
+        // If there was a pending update, execute it
+        if (pendingUpdate) {
+            pendingUpdate = false;
+            setTimeout(() => createCharts(), 100);
+        }
+    }
 }
 
 // Timeline Chart - Concurrent Active Projects and Testing over time
@@ -279,10 +432,10 @@ function createTimelineChart() {
     // Collect all projects with valid kick-off and go-live dates
     const projectsWithDates = filteredData
         .map(project => ({
-            kickOff: parseDate(project['Kick-Off Date']),
-            goLive: parseDate(project['OH Go-Live Date']),
-            testStart: parseDate(project['Testing Start']),
-            testEnd: parseDate(project['Testing End']),
+            kickOff: parseDateCached(project['Kick-Off Date'], project.__id),
+            goLive: parseDateCached(project['OH Go-Live Date'], project.__id),
+            testStart: parseDateCached(project['Testing Start'], project.__id),
+            testEnd: parseDateCached(project['Testing End'], project.__id),
             project: project
         }))
         .filter(p => p.kickOff && p.goLive);
@@ -290,8 +443,8 @@ function createTimelineChart() {
     // Collect projects with valid testing dates
     const projectsWithTestingDates = filteredData
         .map(project => ({
-            testStart: parseDate(project['Testing Start']),
-            testEnd: parseDate(project['Testing End']),
+            testStart: parseDateCached(project['Testing Start'], project.__id),
+            testEnd: parseDateCached(project['Testing End'], project.__id),
             project: project
         }))
         .filter(p => p.testStart && p.testEnd);
@@ -611,8 +764,8 @@ function createLeadTimelineChart() {
         leadProjectData[lead] = filteredData
             .filter(p => p['OH Project Lead'] === lead)
             .map(project => ({
-                kickOff: parseDate(project['Kick-Off Date']),
-                goLive: parseDate(project['OH Go-Live Date']),
+                kickOff: parseDateCached(project['Kick-Off Date'], project.__id),
+                goLive: parseDateCached(project['OH Go-Live Date'], project.__id),
                 project: project
             }))
             .filter(p => p.kickOff && p.goLive);
@@ -621,8 +774,8 @@ function createLeadTimelineChart() {
         leadTestingData[lead] = filteredData
             .filter(p => p['OH Project Lead'] === lead)
             .map(project => ({
-                testStart: parseDate(project['Testing Start']),
-                testEnd: parseDate(project['Testing End']),
+                testStart: parseDateCached(project['Testing Start'], project.__id),
+                testEnd: parseDateCached(project['Testing End'], project.__id),
                 project: project
             }))
             .filter(p => p.testStart && p.testEnd);
@@ -791,8 +944,8 @@ function createSpecialistTimelineChart() {
                 const specialistList = specialists.split(/[;,]/).map(s => s.trim()).filter(s => s);
                 if (specialistList.includes(specialist)) {
                     // Project lifecycle data
-                    const kickOff = parseDate(project['Kick-Off Date']);
-                    const goLive = parseDate(project['OH Go-Live Date']);
+                    const kickOff = parseDateCached(project['Kick-Off Date'], project.__id);
+                    const goLive = parseDateCached(project['OH Go-Live Date'], project.__id);
                     if (kickOff && goLive) {
                         specialistProjectData[specialist].push({
                             kickOff: kickOff,
@@ -802,8 +955,8 @@ function createSpecialistTimelineChart() {
                     }
 
                     // Testing phase data
-                    const testStart = parseDate(project['Testing Start']);
-                    const testEnd = parseDate(project['Testing End']);
+                    const testStart = parseDateCached(project['Testing Start'], project.__id);
+                    const testEnd = parseDateCached(project['Testing End'], project.__id);
                     if (testStart && testEnd) {
                         specialistTestingData[specialist].push({
                             testStart: testStart,
@@ -1084,7 +1237,7 @@ function createGoLiveChart() {
     const now = new Date();
 
     filteredData.forEach(project => {
-        const goLiveDate = parseDate(project['OH Go-Live Date']);
+        const goLiveDate = parseDateCached(project['OH Go-Live Date'], project.__id);
         if (goLiveDate) {
             const monthKey = `${goLiveDate.getFullYear()}-${String(goLiveDate.getMonth() + 1).padStart(2, '0')}`;
             if (!monthlyData[monthKey]) {
@@ -1151,8 +1304,8 @@ function createTestingChart() {
     const now = new Date();
 
     filteredData.forEach((project, index) => {
-        const testStart = parseDate(project['Testing Start']);
-        const testEnd = parseDate(project['Testing End']);
+        const testStart = parseDateCached(project['Testing Start'], project.__id);
+        const testEnd = parseDateCached(project['Testing End'], project.__id);
 
         if (testStart && testEnd && testEnd >= now) {
             testingData.push({
@@ -1255,44 +1408,68 @@ function filterTable() {
     });
 }
 
-// Apply filters
+// Apply filters - OPTIMIZED: Debounced with async chart updates
 function applyFilters() {
-    // Get selected values from multi-select filters
-    const regionFilter = Array.from(document.getElementById('regionFilter').selectedOptions).map(opt => opt.value);
-    const statusFilter = Array.from(document.getElementById('statusFilter').selectedOptions).map(opt => opt.value);
-    const typeFilter = Array.from(document.getElementById('typeFilter').selectedOptions).map(opt => opt.value);
-    const lobFilter = Array.from(document.getElementById('lobFilter').selectedOptions).map(opt => opt.value);
-    const leadFilter = Array.from(document.getElementById('leadFilter').selectedOptions).map(opt => opt.value);
+    // Clear any pending filter updates
+    if (filterDebounceTimer) {
+        clearTimeout(filterDebounceTimer);
+    }
 
-    filteredData = projectData.filter(project => {
-        return (regionFilter.includes('all') || regionFilter.includes(project['OH Region'])) &&
-               (statusFilter.includes('all') || statusFilter.includes(project['Project Status'])) &&
-               (typeFilter.includes('all') || typeFilter.includes(project['Project Type'])) &&
-               (lobFilter.includes('all') || lobFilter.includes(project['LOB'])) &&
-               (leadFilter.includes('all') || leadFilter.includes(project['OH Project Lead']));
-    });
+    // Debounce filter application to prevent rapid successive calls
+    filterDebounceTimer = setTimeout(async () => {
+        showLoading('Applying filters...');
 
-    updateMetrics();
-    createCharts();
-    renderTable();
+        try {
+            // Get selected values from multi-select filters
+            const regionFilter = Array.from(document.getElementById('regionFilter').selectedOptions).map(opt => opt.value);
+            const statusFilter = Array.from(document.getElementById('statusFilter').selectedOptions).map(opt => opt.value);
+            const typeFilter = Array.from(document.getElementById('typeFilter').selectedOptions).map(opt => opt.value);
+            const lobFilter = Array.from(document.getElementById('lobFilter').selectedOptions).map(opt => opt.value);
+            const leadFilter = Array.from(document.getElementById('leadFilter').selectedOptions).map(opt => opt.value);
+
+            // Apply filters to data
+            filteredData = projectData.filter(project => {
+                return (regionFilter.includes('all') || regionFilter.includes(project['OH Region'])) &&
+                       (statusFilter.includes('all') || statusFilter.includes(project['Project Status'])) &&
+                       (typeFilter.includes('all') || typeFilter.includes(project['Project Type'])) &&
+                       (lobFilter.includes('all') || lobFilter.includes(project['LOB'])) &&
+                       (leadFilter.includes('all') || leadFilter.includes(project['OH Project Lead']));
+            });
+
+            // Update UI components
+            updateMetrics();
+            await createCharts(); // Wait for async chart creation
+            renderTable();
+
+        } finally {
+            hideLoading();
+        }
+    }, 300); // 300ms debounce delay
 }
 
-// Clear all filters
-function clearFilters() {
-    // Clear multi-select filters by deselecting all and selecting only "all"
-    ['regionFilter', 'statusFilter', 'typeFilter', 'lobFilter', 'leadFilter'].forEach(filterId => {
-        const select = document.getElementById(filterId);
-        Array.from(select.options).forEach(option => {
-            option.selected = (option.value === 'all');
+// Clear all filters - OPTIMIZED: Async with loading indicator
+async function clearFilters() {
+    showLoading('Clearing filters...');
+
+    try {
+        // Clear multi-select filters by deselecting all and selecting only "all"
+        ['regionFilter', 'statusFilter', 'typeFilter', 'lobFilter', 'leadFilter'].forEach(filterId => {
+            const select = document.getElementById(filterId);
+            Array.from(select.options).forEach(option => {
+                option.selected = (option.value === 'all');
+            });
         });
-    });
 
-    document.getElementById('searchBox').value = '';
+        document.getElementById('searchBox').value = '';
 
-    filteredData = [...projectData];
-    updateMetrics();
-    createCharts();
-    renderTable();
+        filteredData = [...projectData];
+        updateMetrics();
+        await createCharts();
+        renderTable();
+
+    } finally {
+        hideLoading();
+    }
 }
 
 // Reset dashboard
@@ -1521,13 +1698,13 @@ function updateSidePanelContent() {
         document.querySelector('.panel-navigation').style.display = 'none';
 
         // Get projects with missing dates
-        const missingGoLiveProjects = filteredData.filter(p => !parseDate(p['OH Go-Live Date']));
-        const missingKickOffProjects = filteredData.filter(p => !parseDate(p['Kick-Off Date']));
+        const missingGoLiveProjects = filteredData.filter(p => !parseDateCached(p['OH Go-Live Date'], p.__id));
+        const missingKickOffProjects = filteredData.filter(p => !parseDateCached(p['Kick-Off Date'], p.__id));
         const missingBothProjects = filteredData.filter(p =>
-            !parseDate(p['OH Go-Live Date']) && !parseDate(p['Kick-Off Date'])
+            !parseDateCached(p['OH Go-Live Date'], p.__id) && !parseDateCached(p['Kick-Off Date'], p.__id)
         );
         const missingAnyProjects = filteredData.filter(p =>
-            !parseDate(p['OH Go-Live Date']) || !parseDate(p['Kick-Off Date'])
+            !parseDateCached(p['OH Go-Live Date'], p.__id) || !parseDateCached(p['Kick-Off Date'], p.__id)
         );
 
         // Update summary stats
@@ -1570,8 +1747,8 @@ function updateSidePanelContent() {
                 const projectType = project['Project Type'] || 'Unknown';
                 const lob = project['LOB'] || 'Unknown';
 
-                const kickOffDate = parseDate(project['Kick-Off Date']);
-                const goLiveDate = parseDate(project['OH Go-Live Date']);
+                const kickOffDate = parseDateCached(project['Kick-Off Date'], project.__id);
+                const goLiveDate = parseDateCached(project['OH Go-Live Date'], project.__id);
 
                 const statusClass = getStatusClass(status);
 
@@ -1634,13 +1811,13 @@ function updateSidePanelContent() {
         document.querySelector('.panel-navigation').style.display = 'none';
 
         // Get projects with missing testing dates
-        const missingTestStartProjects = filteredData.filter(p => !parseDate(p['Testing Start']));
-        const missingTestEndProjects = filteredData.filter(p => !parseDate(p['Testing End']));
+        const missingTestStartProjects = filteredData.filter(p => !parseDateCached(p['Testing Start'], p.__id));
+        const missingTestEndProjects = filteredData.filter(p => !parseDateCached(p['Testing End'], p.__id));
         const missingBothProjects = filteredData.filter(p =>
-            !parseDate(p['Testing Start']) && !parseDate(p['Testing End'])
+            !parseDateCached(p['Testing Start'], p.__id) && !parseDateCached(p['Testing End'], p.__id)
         );
         const missingAnyProjects = filteredData.filter(p =>
-            !parseDate(p['Testing Start']) || !parseDate(p['Testing End'])
+            !parseDateCached(p['Testing Start'], p.__id) || !parseDateCached(p['Testing End'], p.__id)
         );
 
         // Update summary stats
@@ -1683,8 +1860,8 @@ function updateSidePanelContent() {
                 const projectType = project['Project Type'] || 'Unknown';
                 const lob = project['LOB'] || 'Unknown';
 
-                const testStartDate = parseDate(project['Testing Start']);
-                const testEndDate = parseDate(project['Testing End']);
+                const testStartDate = parseDateCached(project['Testing Start'], project.__id);
+                const testEndDate = parseDateCached(project['Testing End'], project.__id);
 
                 const statusClass = getStatusClass(status);
 
@@ -1759,15 +1936,15 @@ function updateSidePanelContent() {
     if (sidePanelState.chartType === 'main-timeline') {
         // Active projects
         activeProjects = filteredData.filter(p => {
-            const kickOff = parseDate(p['Kick-Off Date']);
-            const goLive = parseDate(p['OH Go-Live Date']);
+            const kickOff = parseDateCached(p['Kick-Off Date'], p.__id);
+            const goLive = parseDateCached(p['OH Go-Live Date'], p.__id);
             return kickOff && goLive && kickOff <= monthEnd && goLive >= month;
         });
 
         // Testing projects
         testingProjects = filteredData.filter(p => {
-            const testStart = parseDate(p['Testing Start']);
-            const testEnd = parseDate(p['Testing End']);
+            const testStart = parseDateCached(p['Testing Start'], p.__id);
+            const testEnd = parseDateCached(p['Testing End'], p.__id);
             return testStart && testEnd && testStart <= monthEnd && testEnd >= month;
         });
     } else if (sidePanelState.chartType === 'lead-timeline') {
@@ -1777,8 +1954,8 @@ function updateSidePanelContent() {
 
         if (timelineType === 'project' || timelineType === 'both') {
             activeProjects = filteredData.filter(p => {
-                const kickOff = parseDate(p['Kick-Off Date']);
-                const goLive = parseDate(p['OH Go-Live Date']);
+                const kickOff = parseDateCached(p['Kick-Off Date'], p.__id);
+                const goLive = parseDateCached(p['OH Go-Live Date'], p.__id);
                 const isSelectedLead = selectedLeads.includes(p['OH Project Lead']);
                 return kickOff && goLive && kickOff <= monthEnd && goLive >= month && isSelectedLead;
             });
@@ -1786,8 +1963,8 @@ function updateSidePanelContent() {
 
         if (timelineType === 'testing' || timelineType === 'both') {
             testingProjects = filteredData.filter(p => {
-                const testStart = parseDate(p['Testing Start']);
-                const testEnd = parseDate(p['Testing End']);
+                const testStart = parseDateCached(p['Testing Start'], p.__id);
+                const testEnd = parseDateCached(p['Testing End'], p.__id);
                 const isSelectedLead = selectedLeads.includes(p['OH Project Lead']);
                 return testStart && testEnd && testStart <= monthEnd && testEnd >= month && isSelectedLead;
             });
@@ -1805,16 +1982,16 @@ function updateSidePanelContent() {
 
                 if (hasSelectedSpecialist) {
                     if (timelineType === 'project' || timelineType === 'both') {
-                        const kickOff = parseDate(p['Kick-Off Date']);
-                        const goLive = parseDate(p['OH Go-Live Date']);
+                        const kickOff = parseDateCached(p['Kick-Off Date'], p.__id);
+                        const goLive = parseDateCached(p['OH Go-Live Date'], p.__id);
                         if (kickOff && goLive && kickOff <= monthEnd && goLive >= month) {
                             activeProjects.push(p);
                         }
                     }
 
                     if (timelineType === 'testing' || timelineType === 'both') {
-                        const testStart = parseDate(p['Testing Start']);
-                        const testEnd = parseDate(p['Testing End']);
+                        const testStart = parseDateCached(p['Testing Start'], p.__id);
+                        const testEnd = parseDateCached(p['Testing End'], p.__id);
                         if (testStart && testEnd && testStart <= monthEnd && testEnd >= month) {
                             testingProjects.push(p);
                         }
@@ -1866,10 +2043,10 @@ function updateSidePanelContent() {
             const projectType = project['Project Type'] || 'Unknown';
             const lob = project['LOB'] || 'Unknown';
 
-            const kickOff = parseDate(project['Kick-Off Date']);
-            const goLive = parseDate(project['OH Go-Live Date']);
-            const testStart = parseDate(project['Testing Start']);
-            const testEnd = parseDate(project['Testing End']);
+            const kickOff = parseDateCached(project['Kick-Off Date'], project.__id);
+            const goLive = parseDateCached(project['OH Go-Live Date'], project.__id);
+            const testStart = parseDateCached(project['Testing Start'], project.__id);
+            const testEnd = parseDateCached(project['Testing End'], project.__id);
 
             const isActive = kickOff && goLive && kickOff <= monthEnd && goLive >= month;
             const isTesting = testStart && testEnd && testStart <= monthEnd && testEnd >= month;
