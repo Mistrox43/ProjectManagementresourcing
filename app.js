@@ -4,6 +4,23 @@ let filteredData = [];
 let charts = {};
 let currentTab = 'current-status'; // Track active tab
 
+// Filter state for tag-based filters
+let activeFilters = {
+    region: [],
+    status: [],
+    type: [],
+    lob: [],
+    lead: []
+};
+
+let filterOptions = {
+    region: [],
+    status: [],
+    type: [],
+    lob: [],
+    lead: []
+};
+
 // Performance optimization variables
 let parsedDateCache = new Map(); // Cache for parsed dates
 let filterDebounceTimer = null; // Debounce timer for filter changes
@@ -265,44 +282,120 @@ function renderTabContent(tabName) {
 
 // Populate filter dropdowns
 function populateFilters() {
-    const regions = [...new Set(projectData.map(p => p['OH Region']).filter(r => r))];
-    const statuses = [...new Set(projectData.map(p => p['Project Status']).filter(s => s))];
-    const types = [...new Set(projectData.map(p => p['Project Type']).filter(t => t))];
-    const lobs = [...new Set(projectData.map(p => p['LOB']).filter(l => l))];
-    const leads = [...new Set(projectData.map(p => p['OH Project Lead']).filter(l => l))];
+    const regions = [...new Set(projectData.map(p => p['OH Region']).filter(r => r))].sort();
+    const statuses = [...new Set(projectData.map(p => p['Project Status']).filter(s => s))].sort();
+    const types = [...new Set(projectData.map(p => p['Project Type']).filter(t => t))].sort();
+    const lobs = [...new Set(projectData.map(p => p['LOB']).filter(l => l))].sort();
+    const leads = [...new Set(projectData.map(p => p['OH Project Lead']).filter(l => l))].sort();
 
-    populateSelect('regionFilter', regions);
-    populateSelect('statusFilter', statuses);
-    populateSelect('typeFilter', types);
-    populateSelect('lobFilter', lobs);
-    populateSelect('leadFilter', leads);
+    filterOptions.region = regions;
+    filterOptions.status = statuses;
+    filterOptions.type = types;
+    filterOptions.lob = lobs;
+    filterOptions.lead = leads;
+
+    populateFilterDropdown('regionFilterOptions', 'region', regions);
+    populateFilterDropdown('statusFilterOptions', 'status', statuses);
+    populateFilterDropdown('typeFilterOptions', 'type', types);
+    populateFilterDropdown('lobFilterOptions', 'lob', lobs);
+    populateFilterDropdown('leadFilterOptions', 'lead', leads);
+
+    updateActiveFiltersDisplay();
 }
 
-function populateSelect(id, options) {
-    const select = document.getElementById(id);
-    // Get currently selected values
-    const currentValues = Array.from(select.selectedOptions).map(opt => opt.value);
+function populateFilterDropdown(containerId, filterType, options) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = options.map(option => `
+        <div class="filter-option" onclick="toggleFilterOption('${filterType}', '${option.replace(/'/g, "\\'")}')">
+            <input type="checkbox" id="${filterType}-${option.replace(/[^a-zA-Z0-9]/g, '_')}"
+                   ${activeFilters[filterType].includes(option) ? 'checked' : ''}>
+            <label for="${filterType}-${option.replace(/[^a-zA-Z0-9]/g, '_')}">${option}</label>
+        </div>
+    `).join('');
+}
 
-    // Keep "All" option
-    select.innerHTML = `<option value="all">${select.options[0].text}</option>`;
+// Toggle filter dropdown
+function toggleFilterDropdown() {
+    const dropdown = document.getElementById('filterDropdown');
+    dropdown.classList.toggle('open');
 
-    options.sort().forEach(option => {
-        const opt = document.createElement('option');
-        opt.value = option;
-        opt.textContent = option;
-        select.appendChild(opt);
+    // Close dropdown when clicking outside
+    if (dropdown.classList.contains('open')) {
+        setTimeout(() => {
+            document.addEventListener('click', closeDropdownOnClickOutside);
+        }, 0);
+    } else {
+        document.removeEventListener('click', closeDropdownOnClickOutside);
+    }
+}
+
+function closeDropdownOnClickOutside(event) {
+    const dropdown = document.getElementById('filterDropdown');
+    const button = document.querySelector('.btn-add-filter');
+
+    if (!dropdown.contains(event.target) && !button.contains(event.target)) {
+        dropdown.classList.remove('open');
+        document.removeEventListener('click', closeDropdownOnClickOutside);
+    }
+}
+
+// Toggle individual filter option
+function toggleFilterOption(filterType, value) {
+    const index = activeFilters[filterType].indexOf(value);
+
+    if (index === -1) {
+        activeFilters[filterType].push(value);
+    } else {
+        activeFilters[filterType].splice(index, 1);
+    }
+
+    updateActiveFiltersDisplay();
+    applyFilters();
+}
+
+// Remove filter tag
+function removeFilterTag(filterType, value) {
+    const index = activeFilters[filterType].indexOf(value);
+    if (index !== -1) {
+        activeFilters[filterType].splice(index, 1);
+    }
+
+    // Update checkbox state in dropdown
+    populateFilterDropdown(`${filterType}FilterOptions`, filterType, filterOptions[filterType]);
+
+    updateActiveFiltersDisplay();
+    applyFilters();
+}
+
+// Update active filters display
+function updateActiveFiltersDisplay() {
+    const container = document.getElementById('activeFilters');
+    const tags = [];
+
+    const categoryLabels = {
+        region: 'Region',
+        status: 'Status',
+        type: 'Type',
+        lob: 'LOB',
+        lead: 'Lead'
+    };
+
+    Object.keys(activeFilters).forEach(filterType => {
+        activeFilters[filterType].forEach(value => {
+            tags.push(`
+                <div class="filter-tag">
+                    <span class="filter-tag-category">${categoryLabels[filterType]}:</span>
+                    <span>${value}</span>
+                    <button class="filter-tag-remove" onclick="removeFilterTag('${filterType}', '${value.replace(/'/g, "\\'")}')">×</button>
+                </div>
+            `);
+        });
     });
 
-    // Restore previous selections if they still exist in the new options
-    if (currentValues.length > 0) {
-        Array.from(select.options).forEach(option => {
-            if (currentValues.includes(option.value) && (option.value === 'all' || options.includes(option.value))) {
-                option.selected = true;
-            }
-        });
+    if (tags.length === 0) {
+        container.innerHTML = '<span class="no-filters-msg">No filters applied</span>';
     } else {
-        // If nothing was selected, select "All" by default
-        select.options[0].selected = true;
+        container.innerHTML = tags.join('');
     }
 }
 
@@ -1454,20 +1547,16 @@ function applyFilters() {
         showLoading('Applying filters...');
 
         try {
-            // Get selected values from multi-select filters
-            const regionFilter = Array.from(document.getElementById('regionFilter').selectedOptions).map(opt => opt.value);
-            const statusFilter = Array.from(document.getElementById('statusFilter').selectedOptions).map(opt => opt.value);
-            const typeFilter = Array.from(document.getElementById('typeFilter').selectedOptions).map(opt => opt.value);
-            const lobFilter = Array.from(document.getElementById('lobFilter').selectedOptions).map(opt => opt.value);
-            const leadFilter = Array.from(document.getElementById('leadFilter').selectedOptions).map(opt => opt.value);
-
-            // Apply filters to data
+            // Apply filters to data based on active filter tags
             filteredData = projectData.filter(project => {
-                return (regionFilter.includes('all') || regionFilter.includes(project['OH Region'])) &&
-                       (statusFilter.includes('all') || statusFilter.includes(project['Project Status'])) &&
-                       (typeFilter.includes('all') || typeFilter.includes(project['Project Type'])) &&
-                       (lobFilter.includes('all') || lobFilter.includes(project['LOB'])) &&
-                       (leadFilter.includes('all') || leadFilter.includes(project['OH Project Lead']));
+                // If no filters are active for a category, include all projects for that category
+                const regionMatch = activeFilters.region.length === 0 || activeFilters.region.includes(project['OH Region']);
+                const statusMatch = activeFilters.status.length === 0 || activeFilters.status.includes(project['Project Status']);
+                const typeMatch = activeFilters.type.length === 0 || activeFilters.type.includes(project['Project Type']);
+                const lobMatch = activeFilters.lob.length === 0 || activeFilters.lob.includes(project['LOB']);
+                const leadMatch = activeFilters.lead.length === 0 || activeFilters.lead.includes(project['OH Project Lead']);
+
+                return regionMatch && statusMatch && typeMatch && lobMatch && leadMatch;
             });
 
             // Update UI components
@@ -1486,15 +1575,23 @@ function clearFilters() {
     showLoading('Clearing filters...');
 
     try {
-        // Clear multi-select filters by deselecting all and selecting only "all"
-        ['regionFilter', 'statusFilter', 'typeFilter', 'lobFilter', 'leadFilter'].forEach(filterId => {
-            const select = document.getElementById(filterId);
-            Array.from(select.options).forEach(option => {
-                option.selected = (option.value === 'all');
-            });
-        });
+        // Clear all active filters
+        activeFilters.region = [];
+        activeFilters.status = [];
+        activeFilters.type = [];
+        activeFilters.lob = [];
+        activeFilters.lead = [];
+
+        // Update dropdown checkboxes
+        populateFilterDropdown('regionFilterOptions', 'region', filterOptions.region);
+        populateFilterDropdown('statusFilterOptions', 'status', filterOptions.status);
+        populateFilterDropdown('typeFilterOptions', 'type', filterOptions.type);
+        populateFilterDropdown('lobFilterOptions', 'lob', filterOptions.lob);
+        populateFilterDropdown('leadFilterOptions', 'lead', filterOptions.lead);
 
         document.getElementById('searchBox').value = '';
+
+        updateActiveFiltersDisplay();
 
         filteredData = [...projectData];
         updateMetrics();
@@ -1515,6 +1612,13 @@ function resetDashboard() {
 
     projectData = [];
     filteredData = [];
+
+    // Clear active filters
+    activeFilters.region = [];
+    activeFilters.status = [];
+    activeFilters.type = [];
+    activeFilters.lob = [];
+    activeFilters.lead = [];
 
     Object.values(charts).forEach(chart => chart.destroy());
     charts = {};
