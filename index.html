@@ -41,230 +41,262 @@
                 </div>
             </div>
 
-            <!-- Filters -->
-            <div class="filters-section">
-                <div class="filter-group">
-                    <label>Region: <span class="filter-hint">(Hold Ctrl/Cmd to select multiple)</span></label>
-                    <select id="regionFilter" multiple size="4" onchange="applyFilters()">
-                        <option value="all" selected>All Regions</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>Project Status: <span class="filter-hint">(Hold Ctrl/Cmd to select multiple)</span></label>
-                    <select id="statusFilter" multiple size="4" onchange="applyFilters()">
-                        <option value="all" selected>All Statuses</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>Project Type: <span class="filter-hint">(Hold Ctrl/Cmd to select multiple)</span></label>
-                    <select id="typeFilter" multiple size="4" onchange="applyFilters()">
-                        <option value="all" selected>All Types</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>LOB: <span class="filter-hint">(Hold Ctrl/Cmd to select multiple)</span></label>
-                    <select id="lobFilter" multiple size="4" onchange="applyFilters()">
-                        <option value="all" selected>All LOBs</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>Project Lead: <span class="filter-hint">(Hold Ctrl/Cmd to select multiple)</span></label>
-                    <select id="leadFilter" multiple size="4" onchange="applyFilters()">
-                        <option value="all" selected>All Leads</option>
-                    </select>
-                </div>
-                <button class="btn-clear" onclick="clearFilters()">Clear Filters</button>
+            <!-- Tab Navigation -->
+            <div class="tab-navigation">
+                <button class="tab-btn active" onclick="switchTab('current-status')" data-tab="current-status">
+                    📊 Current Status
+                </button>
+                <button class="tab-btn" onclick="switchTab('timeline-planning')" data-tab="timeline-planning">
+                    📅 Timeline & Planning
+                </button>
+                <button class="tab-btn" onclick="switchTab('data-operations')" data-tab="data-operations">
+                    🗂️ Data & Operations
+                </button>
             </div>
 
-            <!-- Key Metrics -->
-            <div class="metrics-grid" id="metricsGrid">
-                <!-- Metrics will be dynamically generated -->
-            </div>
+            <!-- Tab: Current Status -->
+            <div class="tab-content active" id="tab-current-status">
+                <!-- Current Status Metrics -->
+                <div class="metrics-grid" id="metricsGridCurrent">
+                    <!-- Metrics will be dynamically generated -->
+                </div>
 
-            <!-- Charts Grid -->
-            <div class="charts-container">
-                <!-- Projects Timeline -->
-                <div class="chart-card full-width">
-                    <div class="chart-header">
-                        <h3>Active Projects Over Time (Concurrent Workload)</h3>
-                        <div class="chart-controls">
-                            <label>Granularity:</label>
-                            <div class="radio-group horizontal">
-                                <label class="radio-label">
-                                    <input type="radio" name="mainTimelineGranularity" value="day" onchange="createTimelineChart()">
-                                    <span>Day</span>
-                                </label>
-                                <label class="radio-label">
-                                    <input type="radio" name="mainTimelineGranularity" value="week" onchange="createTimelineChart()">
-                                    <span>Week</span>
-                                </label>
-                                <label class="radio-label">
-                                    <input type="radio" name="mainTimelineGranularity" value="month" checked onchange="createTimelineChart()">
-                                    <span>Month</span>
-                                </label>
-                            </div>
-                        </div>
+                <!-- Current Status Charts -->
+                <div class="charts-container">
+                    <!-- Workload Charts -->
+                    <div class="chart-card">
+                        <h3>Workload by Project Lead</h3>
+                        <canvas id="leadWorkloadChart"></canvas>
                     </div>
-                    <canvas id="timelineChart"></canvas>
+
+                    <div class="chart-card">
+                        <h3>Workload by Specialist</h3>
+                        <canvas id="specialistWorkloadChart"></canvas>
+                    </div>
+
+                    <!-- Distribution Charts -->
+                    <div class="chart-card">
+                        <h3>Projects by Region</h3>
+                        <canvas id="regionChart"></canvas>
+                    </div>
+
+                    <div class="chart-card">
+                        <h3>Projects by Status</h3>
+                        <canvas id="statusChart"></canvas>
+                    </div>
+
+                    <div class="chart-card">
+                        <h3>Projects by Type</h3>
+                        <canvas id="typeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab: Timeline & Planning -->
+            <div class="tab-content" id="tab-timeline-planning">
+                <!-- Timeline Metrics -->
+                <div class="metrics-grid" id="metricsGridTimeline">
+                    <!-- Metrics will be dynamically generated -->
                 </div>
 
-                <!-- Staff Workload -->
-                <div class="chart-card">
-                    <h3>Workload by Project Lead</h3>
-                    <canvas id="leadWorkloadChart"></canvas>
-                </div>
-
-                <!-- Specialist Workload -->
-                <div class="chart-card">
-                    <h3>Workload by Specialist</h3>
-                    <canvas id="specialistWorkloadChart"></canvas>
-                </div>
-
-                <!-- Project Lead Workload Over Time -->
-                <div class="chart-card full-width">
-                    <div class="chart-header">
-                        <h3>Project Lead Workload Over Time (Concurrent Projects)</h3>
-                        <div class="chart-controls-group">
-                            <div class="chart-controls">
-                                <label>Timeline View:</label>
-                                <div class="radio-group">
-                                    <label class="radio-label">
-                                        <input type="radio" name="leadTimelineType" value="project" checked onchange="createLeadTimelineChart()">
-                                        <span>Project Lifecycle (Kick-off to Go-Live)</span>
-                                    </label>
-                                    <label class="radio-label">
-                                        <input type="radio" name="leadTimelineType" value="testing" onchange="createLeadTimelineChart()">
-                                        <span>Testing Phase (Testing Start to End)</span>
-                                    </label>
-                                    <label class="radio-label">
-                                        <input type="radio" name="leadTimelineType" value="both" onchange="createLeadTimelineChart()">
-                                        <span>Both</span>
-                                    </label>
-                                </div>
-                            </div>
+                <!-- Timeline Charts -->
+                <div class="charts-container">
+                    <!-- Active Projects Timeline -->
+                    <div class="chart-card full-width">
+                        <div class="chart-header">
+                            <h3>Active Projects Over Time (Concurrent Workload)</h3>
                             <div class="chart-controls">
                                 <label>Granularity:</label>
                                 <div class="radio-group horizontal">
                                     <label class="radio-label">
-                                        <input type="radio" name="leadTimelineGranularity" value="day" onchange="createLeadTimelineChart()">
+                                        <input type="radio" name="mainTimelineGranularity" value="day" onchange="createTimelineChart()">
                                         <span>Day</span>
                                     </label>
                                     <label class="radio-label">
-                                        <input type="radio" name="leadTimelineGranularity" value="week" onchange="createLeadTimelineChart()">
+                                        <input type="radio" name="mainTimelineGranularity" value="week" onchange="createTimelineChart()">
                                         <span>Week</span>
                                     </label>
                                     <label class="radio-label">
-                                        <input type="radio" name="leadTimelineGranularity" value="month" checked onchange="createLeadTimelineChart()">
+                                        <input type="radio" name="mainTimelineGranularity" value="month" checked onchange="createTimelineChart()">
                                         <span>Month</span>
                                     </label>
                                 </div>
                             </div>
-                            <div class="chart-controls">
-                                <label>Select Leads to Display:</label>
-                                <select id="leadTimelineSelect" multiple size="5" onchange="createLeadTimelineChart()">
-                                </select>
-                                <button class="btn-chart-control" onclick="selectAllLeads()">Select All</button>
-                                <button class="btn-chart-control" onclick="deselectAllLeads()">Deselect All</button>
-                            </div>
                         </div>
+                        <canvas id="timelineChart"></canvas>
                     </div>
-                    <canvas id="leadTimelineChart"></canvas>
-                </div>
 
-                <!-- Specialist Workload Over Time -->
-                <div class="chart-card full-width">
-                    <div class="chart-header">
-                        <h3>Specialist Workload Over Time (Concurrent Projects)</h3>
-                        <div class="chart-controls-group">
-                            <div class="chart-controls">
-                                <label>Timeline View:</label>
-                                <div class="radio-group">
-                                    <label class="radio-label">
-                                        <input type="radio" name="specialistTimelineType" value="project" checked onchange="createSpecialistTimelineChart()">
-                                        <span>Project Lifecycle (Kick-off to Go-Live)</span>
-                                    </label>
-                                    <label class="radio-label">
-                                        <input type="radio" name="specialistTimelineType" value="testing" onchange="createSpecialistTimelineChart()">
-                                        <span>Testing Phase (Testing Start to End)</span>
-                                    </label>
-                                    <label class="radio-label">
-                                        <input type="radio" name="specialistTimelineType" value="both" onchange="createSpecialistTimelineChart()">
-                                        <span>Both</span>
-                                    </label>
+                    <!-- Project Lead Workload Over Time -->
+                    <div class="chart-card full-width">
+                        <div class="chart-header">
+                            <h3>Project Lead Workload Over Time (Concurrent Projects)</h3>
+                            <div class="chart-controls-group">
+                                <div class="chart-controls">
+                                    <label>Timeline View:</label>
+                                    <div class="radio-group">
+                                        <label class="radio-label">
+                                            <input type="radio" name="leadTimelineType" value="project" checked onchange="createLeadTimelineChart()">
+                                            <span>Project Lifecycle (Kick-off to Go-Live)</span>
+                                        </label>
+                                        <label class="radio-label">
+                                            <input type="radio" name="leadTimelineType" value="testing" onchange="createLeadTimelineChart()">
+                                            <span>Testing Phase (Testing Start to End)</span>
+                                        </label>
+                                        <label class="radio-label">
+                                            <input type="radio" name="leadTimelineType" value="both" onchange="createLeadTimelineChart()">
+                                            <span>Both</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="chart-controls">
+                                    <label>Granularity:</label>
+                                    <div class="radio-group horizontal">
+                                        <label class="radio-label">
+                                            <input type="radio" name="leadTimelineGranularity" value="day" onchange="createLeadTimelineChart()">
+                                            <span>Day</span>
+                                        </label>
+                                        <label class="radio-label">
+                                            <input type="radio" name="leadTimelineGranularity" value="week" onchange="createLeadTimelineChart()">
+                                            <span>Week</span>
+                                        </label>
+                                        <label class="radio-label">
+                                            <input type="radio" name="leadTimelineGranularity" value="month" checked onchange="createLeadTimelineChart()">
+                                            <span>Month</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="chart-controls">
+                                    <label>Select Leads to Display:</label>
+                                    <select id="leadTimelineSelect" multiple size="5" onchange="createLeadTimelineChart()">
+                                    </select>
+                                    <button class="btn-chart-control" onclick="selectAllLeads()">Select All</button>
+                                    <button class="btn-chart-control" onclick="deselectAllLeads()">Deselect All</button>
                                 </div>
                             </div>
-                            <div class="chart-controls">
-                                <label>Granularity:</label>
-                                <div class="radio-group horizontal">
-                                    <label class="radio-label">
-                                        <input type="radio" name="specialistTimelineGranularity" value="day" onchange="createSpecialistTimelineChart()">
-                                        <span>Day</span>
-                                    </label>
-                                    <label class="radio-label">
-                                        <input type="radio" name="specialistTimelineGranularity" value="week" onchange="createSpecialistTimelineChart()">
-                                        <span>Week</span>
-                                    </label>
-                                    <label class="radio-label">
-                                        <input type="radio" name="specialistTimelineGranularity" value="month" checked onchange="createSpecialistTimelineChart()">
-                                        <span>Month</span>
-                                    </label>
+                        </div>
+                        <canvas id="leadTimelineChart"></canvas>
+                    </div>
+
+                    <!-- Specialist Workload Over Time -->
+                    <div class="chart-card full-width">
+                        <div class="chart-header">
+                            <h3>Specialist Workload Over Time (Concurrent Projects)</h3>
+                            <div class="chart-controls-group">
+                                <div class="chart-controls">
+                                    <label>Timeline View:</label>
+                                    <div class="radio-group">
+                                        <label class="radio-label">
+                                            <input type="radio" name="specialistTimelineType" value="project" checked onchange="createSpecialistTimelineChart()">
+                                            <span>Project Lifecycle (Kick-off to Go-Live)</span>
+                                        </label>
+                                        <label class="radio-label">
+                                            <input type="radio" name="specialistTimelineType" value="testing" onchange="createSpecialistTimelineChart()">
+                                            <span>Testing Phase (Testing Start to End)</span>
+                                        </label>
+                                        <label class="radio-label">
+                                            <input type="radio" name="specialistTimelineType" value="both" onchange="createSpecialistTimelineChart()">
+                                            <span>Both</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="chart-controls">
+                                    <label>Granularity:</label>
+                                    <div class="radio-group horizontal">
+                                        <label class="radio-label">
+                                            <input type="radio" name="specialistTimelineGranularity" value="day" onchange="createSpecialistTimelineChart()">
+                                            <span>Day</span>
+                                        </label>
+                                        <label class="radio-label">
+                                            <input type="radio" name="specialistTimelineGranularity" value="week" onchange="createSpecialistTimelineChart()">
+                                            <span>Week</span>
+                                        </label>
+                                        <label class="radio-label">
+                                            <input type="radio" name="specialistTimelineGranularity" value="month" checked onchange="createSpecialistTimelineChart()">
+                                            <span>Month</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="chart-controls">
+                                    <label>Select Specialists to Display:</label>
+                                    <select id="specialistTimelineSelect" multiple size="5" onchange="createSpecialistTimelineChart()">
+                                    </select>
+                                    <button class="btn-chart-control" onclick="selectAllSpecialists()">Select All</button>
+                                    <button class="btn-chart-control" onclick="deselectAllSpecialists()">Deselect All</button>
                                 </div>
                             </div>
-                            <div class="chart-controls">
-                                <label>Select Specialists to Display:</label>
-                                <select id="specialistTimelineSelect" multiple size="5" onchange="createSpecialistTimelineChart()">
-                                </select>
-                                <button class="btn-chart-control" onclick="selectAllSpecialists()">Select All</button>
-                                <button class="btn-chart-control" onclick="deselectAllSpecialists()">Deselect All</button>
-                            </div>
                         </div>
+                        <canvas id="specialistTimelineChart"></canvas>
                     </div>
-                    <canvas id="specialistTimelineChart"></canvas>
-                </div>
 
-                <!-- Projects by Region -->
-                <div class="chart-card">
-                    <h3>Projects by Region</h3>
-                    <canvas id="regionChart"></canvas>
-                </div>
+                    <!-- Monthly Go-Live Timeline -->
+                    <div class="chart-card full-width">
+                        <h3>Monthly Go-Live Timeline</h3>
+                        <canvas id="goLiveChart"></canvas>
+                    </div>
 
-                <!-- Projects by Status -->
-                <div class="chart-card">
-                    <h3>Projects by Status</h3>
-                    <canvas id="statusChart"></canvas>
-                </div>
-
-                <!-- Projects by Type -->
-                <div class="chart-card">
-                    <h3>Projects by Type</h3>
-                    <canvas id="typeChart"></canvas>
-                </div>
-
-                <!-- Monthly Go-Live Trend -->
-                <div class="chart-card full-width">
-                    <h3>Monthly Go-Live Timeline</h3>
-                    <canvas id="goLiveChart"></canvas>
-                </div>
-
-                <!-- Testing Timeline -->
-                <div class="chart-card full-width">
-                    <h3>Testing Schedule Overview</h3>
-                    <canvas id="testingChart"></canvas>
+                    <!-- Testing Schedule -->
+                    <div class="chart-card full-width">
+                        <h3>Testing Schedule Overview</h3>
+                        <canvas id="testingChart"></canvas>
+                    </div>
                 </div>
             </div>
 
-            <!-- Data Table -->
-            <div class="table-section">
-                <h3>Project Details</h3>
-                <div class="table-controls">
-                    <input type="text" id="searchBox" placeholder="Search projects..." onkeyup="filterTable()">
-                    <button class="btn-secondary" onclick="exportToCSV()">Export Filtered Data</button>
+            <!-- Tab: Data & Operations -->
+            <div class="tab-content" id="tab-data-operations">
+                <!-- Data Quality Metrics -->
+                <div class="metrics-grid" id="metricsGridData">
+                    <!-- Metrics will be dynamically generated -->
                 </div>
-                <div class="table-wrapper">
-                    <table id="projectTable">
-                        <thead id="tableHeader"></thead>
-                        <tbody id="tableBody"></tbody>
-                    </table>
+
+                <!-- Filters -->
+                <div class="filters-section">
+                    <div class="filter-group">
+                        <label>Region: <span class="filter-hint">(Hold Ctrl/Cmd to select multiple)</span></label>
+                        <select id="regionFilter" multiple size="4" onchange="applyFilters()">
+                            <option value="all" selected>All Regions</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Project Status: <span class="filter-hint">(Hold Ctrl/Cmd to select multiple)</span></label>
+                        <select id="statusFilter" multiple size="4" onchange="applyFilters()">
+                            <option value="all" selected>All Statuses</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Project Type: <span class="filter-hint">(Hold Ctrl/Cmd to select multiple)</span></label>
+                        <select id="typeFilter" multiple size="4" onchange="applyFilters()">
+                            <option value="all" selected>All Types</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>LOB: <span class="filter-hint">(Hold Ctrl/Cmd to select multiple)</span></label>
+                        <select id="lobFilter" multiple size="4" onchange="applyFilters()">
+                            <option value="all" selected>All LOBs</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Project Lead: <span class="filter-hint">(Hold Ctrl/Cmd to select multiple)</span></label>
+                        <select id="leadFilter" multiple size="4" onchange="applyFilters()">
+                            <option value="all" selected>All Leads</option>
+                        </select>
+                    </div>
+                    <button class="btn-clear" onclick="clearFilters()">Clear Filters</button>
+                </div>
+
+                <!-- Data Table -->
+                <div class="table-section">
+                    <h3>Project Details</h3>
+                    <div class="table-controls">
+                        <input type="text" id="searchBox" placeholder="Search projects..." onkeyup="filterTable()">
+                        <button class="btn-secondary" onclick="exportToCSV()">Export Filtered Data</button>
+                    </div>
+                    <div class="table-wrapper">
+                        <table id="projectTable">
+                            <thead id="tableHeader"></thead>
+                            <tbody id="tableBody"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>

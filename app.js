@@ -2,12 +2,37 @@
 let projectData = [];
 let filteredData = [];
 let charts = {};
+let currentTab = 'current-status'; // Track active tab
 
 // Performance optimization variables
 let parsedDateCache = new Map(); // Cache for parsed dates
 let filterDebounceTimer = null; // Debounce timer for filter changes
 let isUpdating = false; // Flag to prevent concurrent updates
 let pendingUpdate = false; // Flag to track if an update is pending
+
+// Tab switching function
+function switchTab(tabName) {
+    // Update current tab
+    currentTab = tabName;
+
+    // Update tab buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        if (btn.getAttribute('data-tab') === tabName) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
+    // Update tab content
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById(`tab-${tabName}`).classList.add('active');
+
+    // Render charts for the active tab
+    renderTabContent(tabName);
+}
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
@@ -212,8 +237,30 @@ function parseCSV(csvText) {
 function initializeDashboard() {
     populateFilters();
     updateMetrics();
-    createCharts();
+    renderTabContent(currentTab);
     renderTable();
+}
+
+// Render content for active tab
+function renderTabContent(tabName) {
+    if (tabName === 'current-status') {
+        createLeadWorkloadChart();
+        createSpecialistWorkloadChart();
+        createRegionChart();
+        createStatusChart();
+        createTypeChart();
+    } else if (tabName === 'timeline-planning') {
+        createTimelineChart();
+        populateLeadTimelineSelect();
+        populateSpecialistTimelineSelect();
+        createLeadTimelineChart();
+        createSpecialistTimelineChart();
+        createGoLiveChart();
+        createTestingChart();
+    } else if (tabName === 'data-operations') {
+        // Data & Operations tab only needs table which is always rendered
+        // No charts in this tab
+    }
 }
 
 // Populate filter dropdowns
@@ -261,8 +308,6 @@ function populateSelect(id, options) {
 
 // Update key metrics - OPTIMIZED: Single pass through data
 function updateMetrics() {
-    const metricsGrid = document.getElementById('metricsGrid');
-
     const now = new Date();
     const sixtyDaysFromNow = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000));
 
@@ -349,77 +394,66 @@ function updateMetrics() {
     }
     document.getElementById('dateRangeDisplay').textContent = dateRangeText;
 
-    const metrics = [
+    // Tab 1: Current Status metrics
+    const currentMetrics = [
         { label: 'Total Projects', value: totalProjects, subtitle: 'All projects', clickable: false },
         { label: 'Active Projects', value: activeProjects, subtitle: 'In progress', clickable: false },
-        { label: 'Upcoming Go-Lives', value: upcomingGoLives, subtitle: 'Next 60 days', clickable: false },
-        { label: 'In Testing', value: inTesting, subtitle: 'Currently testing', clickable: false },
-        { label: 'Missing Date Data', value: missingAnyDate, subtitle: `Go-Live: ${missingGoLive}, Kick-Off: ${missingKickOff}`, clickable: true },
-        { label: 'Missing Testing Dates', value: missingAnyTestDate, subtitle: `Test Start: ${missingTestStart}, Test End: ${missingTestEnd}, Not Required: ${testingNotRequired}`, clickable: true },
         { label: 'Project Leads', value: uniqueLeads.size, subtitle: 'Unique leads', clickable: false },
         { label: 'Specialists', value: uniqueSpecialists.size, subtitle: 'Unique specialists', clickable: false }
     ];
 
-    metricsGrid.innerHTML = metrics.map(m => `
-        <div class="metric-card ${m.clickable ? 'metric-card-clickable' : ''}" ${m.clickable ? `onclick="${m.label === 'Missing Date Data' ? 'openMissingDatesPanel()' : 'openMissingTestingDatesPanel()'}"` : ''}>
-            <div class="metric-label">${m.label}</div>
-            <div class="metric-value">${m.value}</div>
-            <div class="metric-subtitle">${m.subtitle}</div>
-        </div>
-    `).join('');
+    // Tab 2: Timeline & Planning metrics
+    const timelineMetrics = [
+        { label: 'Upcoming Go-Lives', value: upcomingGoLives, subtitle: 'Next 60 days', clickable: false },
+        { label: 'In Testing', value: inTesting, subtitle: 'Currently testing', clickable: false }
+    ];
+
+    // Tab 3: Data & Operations metrics
+    const dataMetrics = [
+        { label: 'Missing Date Data', value: missingAnyDate, subtitle: `Go-Live: ${missingGoLive}, Kick-Off: ${missingKickOff}`, clickable: true },
+        { label: 'Missing Testing Dates', value: missingAnyTestDate, subtitle: `Test Start: ${missingTestStart}, Test End: ${missingTestEnd}, Not Required: ${testingNotRequired}`, clickable: true }
+    ];
+
+    // Populate metrics for each tab
+    const metricsGridCurrent = document.getElementById('metricsGridCurrent');
+    const metricsGridTimeline = document.getElementById('metricsGridTimeline');
+    const metricsGridData = document.getElementById('metricsGridData');
+
+    if (metricsGridCurrent) {
+        metricsGridCurrent.innerHTML = currentMetrics.map(m => `
+            <div class="metric-card ${m.clickable ? 'metric-card-clickable' : ''}" ${m.clickable ? `onclick="${m.label === 'Missing Date Data' ? 'openMissingDatesPanel()' : 'openMissingTestingDatesPanel()'}"` : ''}>
+                <div class="metric-label">${m.label}</div>
+                <div class="metric-value">${m.value}</div>
+                <div class="metric-subtitle">${m.subtitle}</div>
+            </div>
+        `).join('');
+    }
+
+    if (metricsGridTimeline) {
+        metricsGridTimeline.innerHTML = timelineMetrics.map(m => `
+            <div class="metric-card ${m.clickable ? 'metric-card-clickable' : ''}" ${m.clickable ? `onclick="${m.label === 'Missing Date Data' ? 'openMissingDatesPanel()' : 'openMissingTestingDatesPanel()'}"` : ''}>
+                <div class="metric-label">${m.label}</div>
+                <div class="metric-value">${m.value}</div>
+                <div class="metric-subtitle">${m.subtitle}</div>
+            </div>
+        `).join('');
+    }
+
+    if (metricsGridData) {
+        metricsGridData.innerHTML = dataMetrics.map(m => `
+            <div class="metric-card ${m.clickable ? 'metric-card-clickable' : ''}" ${m.clickable ? `onclick="${m.label === 'Missing Date Data' ? 'openMissingDatesPanel()' : 'openMissingTestingDatesPanel()'}"` : ''}>
+                <div class="metric-label">${m.label}</div>
+                <div class="metric-value">${m.value}</div>
+                <div class="metric-subtitle">${m.subtitle}</div>
+            </div>
+        `).join('');
+    }
 }
 
-// Create all charts - OPTIMIZED: Async with loading indicators
+// Create all charts - Now uses renderTabContent for active tab only
 async function createCharts() {
-    // Prevent concurrent updates
-    if (isUpdating) {
-        pendingUpdate = true;
-        return;
-    }
-
-    isUpdating = true;
-    showLoading('Updating charts...');
-
-    try {
-        // Use requestAnimationFrame to allow UI updates
-        await new Promise(resolve => requestAnimationFrame(resolve));
-
-        // Batch 1: Main timeline and workload charts
-        createTimelineChart();
-        createLeadWorkloadChart();
-        createSpecialistWorkloadChart();
-
-        await new Promise(resolve => requestAnimationFrame(resolve));
-
-        // Batch 2: Timeline selects and charts
-        populateLeadTimelineSelect();
-        populateSpecialistTimelineSelect();
-        createLeadTimelineChart();
-        createSpecialistTimelineChart();
-
-        await new Promise(resolve => requestAnimationFrame(resolve));
-
-        // Batch 3: Distribution charts
-        createRegionChart();
-        createStatusChart();
-        createTypeChart();
-
-        await new Promise(resolve => requestAnimationFrame(resolve));
-
-        // Batch 4: Date-based charts
-        createGoLiveChart();
-        createTestingChart();
-
-    } finally {
-        isUpdating = false;
-        hideLoading();
-
-        // If there was a pending update, execute it
-        if (pendingUpdate) {
-            pendingUpdate = false;
-            setTimeout(() => createCharts(), 100);
-        }
-    }
+    // Render content for current active tab
+    renderTabContent(currentTab);
 }
 
 // Timeline Chart - Concurrent Active Projects and Testing over time
@@ -1416,7 +1450,7 @@ function applyFilters() {
     }
 
     // Debounce filter application to prevent rapid successive calls
-    filterDebounceTimer = setTimeout(async () => {
+    filterDebounceTimer = setTimeout(() => {
         showLoading('Applying filters...');
 
         try {
@@ -1438,7 +1472,7 @@ function applyFilters() {
 
             // Update UI components
             updateMetrics();
-            await createCharts(); // Wait for async chart creation
+            renderTabContent(currentTab);
             renderTable();
 
         } finally {
@@ -1448,7 +1482,7 @@ function applyFilters() {
 }
 
 // Clear all filters - OPTIMIZED: Async with loading indicator
-async function clearFilters() {
+function clearFilters() {
     showLoading('Clearing filters...');
 
     try {
@@ -1464,7 +1498,7 @@ async function clearFilters() {
 
         filteredData = [...projectData];
         updateMetrics();
-        await createCharts();
+        renderTabContent(currentTab);
         renderTable();
 
     } finally {
