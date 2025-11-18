@@ -62,31 +62,61 @@
                 <div class="filter-header">
                     <h3 class="filter-title">Filters</h3>
                     <div class="filter-actions">
+                        <!-- Region Filter -->
                         <div class="filter-dropdown-wrapper">
-                            <button class="btn-add-filter" onclick="toggleFilterDropdown()">+ Add Filter</button>
-                            <div class="filter-dropdown" id="filterDropdown">
+                            <button class="btn-filter-category" onclick="toggleCategoryDropdown('region')">Region</button>
+                            <div class="filter-dropdown" id="regionDropdown">
                                 <div class="filter-dropdown-section">
                                     <label class="filter-dropdown-label">Region</label>
                                     <div id="regionFilterOptions" class="filter-options"></div>
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- Status Filter -->
+                        <div class="filter-dropdown-wrapper">
+                            <button class="btn-filter-category" onclick="toggleCategoryDropdown('status')">Status</button>
+                            <div class="filter-dropdown" id="statusDropdown">
                                 <div class="filter-dropdown-section">
                                     <label class="filter-dropdown-label">Project Status</label>
                                     <div id="statusFilterOptions" class="filter-options"></div>
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- Type Filter -->
+                        <div class="filter-dropdown-wrapper">
+                            <button class="btn-filter-category" onclick="toggleCategoryDropdown('type')">Type</button>
+                            <div class="filter-dropdown" id="typeDropdown">
                                 <div class="filter-dropdown-section">
                                     <label class="filter-dropdown-label">Project Type</label>
                                     <div id="typeFilterOptions" class="filter-options"></div>
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- LOB Filter -->
+                        <div class="filter-dropdown-wrapper">
+                            <button class="btn-filter-category" onclick="toggleCategoryDropdown('lob')">LOB</button>
+                            <div class="filter-dropdown" id="lobDropdown">
                                 <div class="filter-dropdown-section">
                                     <label class="filter-dropdown-label">LOB</label>
                                     <div id="lobFilterOptions" class="filter-options"></div>
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- Lead Filter -->
+                        <div class="filter-dropdown-wrapper">
+                            <button class="btn-filter-category" onclick="toggleCategoryDropdown('lead')">Lead</button>
+                            <div class="filter-dropdown" id="leadDropdown">
                                 <div class="filter-dropdown-section">
                                     <label class="filter-dropdown-label">Project Lead</label>
                                     <div id="leadFilterOptions" class="filter-options"></div>
                                 </div>
                             </div>
                         </div>
+
                         <button class="btn-clear-compact" onclick="clearFilters()">Clear All</button>
                     </div>
                 </div>

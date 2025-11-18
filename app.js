@@ -329,9 +329,39 @@ function populateFilterDropdown(containerId, filterType, options) {
     `).join('');
 }
 
-// Toggle filter dropdown
+// Toggle filter dropdown (kept for backwards compatibility if needed)
 function toggleFilterDropdown() {
     const dropdown = document.getElementById('filterDropdown');
+    if (dropdown) {
+        dropdown.classList.toggle('open');
+
+        // Close dropdown when clicking outside
+        if (dropdown.classList.contains('open')) {
+            setTimeout(() => {
+                document.addEventListener('click', closeDropdownOnClickOutside);
+            }, 0);
+        } else {
+            document.removeEventListener('click', closeDropdownOnClickOutside);
+        }
+    }
+}
+
+// Toggle category-specific dropdown
+function toggleCategoryDropdown(category) {
+    const dropdownId = category + 'Dropdown';
+    const dropdown = document.getElementById(dropdownId);
+
+    if (!dropdown) return;
+
+    // Close all other dropdowns first
+    const allDropdowns = document.querySelectorAll('.filter-dropdown');
+    allDropdowns.forEach(dd => {
+        if (dd.id !== dropdownId) {
+            dd.classList.remove('open');
+        }
+    });
+
+    // Toggle the clicked dropdown
     dropdown.classList.toggle('open');
 
     // Close dropdown when clicking outside
@@ -345,11 +375,42 @@ function toggleFilterDropdown() {
 }
 
 function closeDropdownOnClickOutside(event) {
+    // Check for old single dropdown (backwards compatibility)
     const dropdown = document.getElementById('filterDropdown');
     const button = document.querySelector('.btn-add-filter');
 
-    if (!dropdown.contains(event.target) && !button.contains(event.target)) {
-        dropdown.classList.remove('open');
+    if (dropdown && button) {
+        if (!dropdown.contains(event.target) && !button.contains(event.target)) {
+            dropdown.classList.remove('open');
+            document.removeEventListener('click', closeDropdownOnClickOutside);
+            return;
+        }
+    }
+
+    // Check for new category dropdowns
+    const allDropdowns = document.querySelectorAll('.filter-dropdown.open');
+    const allButtons = document.querySelectorAll('.btn-filter-category');
+
+    let clickedInsideDropdown = false;
+    let clickedButton = false;
+
+    allDropdowns.forEach(dd => {
+        if (dd.contains(event.target)) {
+            clickedInsideDropdown = true;
+        }
+    });
+
+    allButtons.forEach(btn => {
+        if (btn.contains(event.target)) {
+            clickedButton = true;
+        }
+    });
+
+    // If clicked outside all dropdowns and buttons, close all dropdowns
+    if (!clickedInsideDropdown && !clickedButton) {
+        allDropdowns.forEach(dd => {
+            dd.classList.remove('open');
+        });
         document.removeEventListener('click', closeDropdownOnClickOutside);
     }
 }

@@ -261,7 +261,8 @@ header h1 {
     position: relative;
 }
 
-.btn-add-filter {
+.btn-add-filter,
+.btn-filter-category {
     padding: 0.5rem 1rem;
     background: var(--primary-color);
     color: white;
@@ -273,7 +274,8 @@ header h1 {
     transition: all 0.2s;
 }
 
-.btn-add-filter:hover {
+.btn-add-filter:hover,
+.btn-filter-category:hover {
     background: var(--primary-dark);
     transform: translateY(-1px);
     box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
