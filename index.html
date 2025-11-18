@@ -49,6 +49,9 @@
                 <button class="tab-btn" onclick="switchTab('timeline-planning')" data-tab="timeline-planning">
                     📅 Timeline & Planning
                 </button>
+                <button class="tab-btn" onclick="switchTab('capacity-planning')" data-tab="capacity-planning">
+                    👥 Capacity Planning
+                </button>
                 <button class="tab-btn" onclick="switchTab('data-operations')" data-tab="data-operations">
                     🗂️ Data & Operations
                 </button>
@@ -280,6 +283,73 @@
                 </div>
             </div>
 
+            <!-- Tab: Capacity Planning -->
+            <div class="tab-content" id="tab-capacity-planning">
+                <!-- Capacity Configuration -->
+                <div class="capacity-config-section">
+                    <div class="config-header">
+                        <h3>⚙️ Capacity Configuration</h3>
+                        <button class="btn-toggle-config" onclick="toggleCapacityConfig()">
+                            <span id="configToggleText">Show Settings</span>
+                        </button>
+                    </div>
+                    <div class="config-panel" id="capacityConfigPanel" style="display: none;">
+                        <div class="config-row">
+                            <div class="config-item">
+                                <label>Default Capacity - Project Lead:</label>
+                                <input type="number" id="defaultLeadCapacity" min="1" max="20" value="5" onchange="saveCapacityConfig()">
+                                <span class="config-hint">concurrent projects</span>
+                            </div>
+                            <div class="config-item">
+                                <label>Default Capacity - Specialist:</label>
+                                <input type="number" id="defaultSpecialistCapacity" min="1" max="20" value="8" onchange="saveCapacityConfig()">
+                                <span class="config-hint">concurrent projects</span>
+                            </div>
+                            <div class="config-item">
+                                <label>Alert Threshold:</label>
+                                <input type="number" id="alertThreshold" min="50" max="100" value="80" onchange="saveCapacityConfig()">
+                                <span class="config-hint">% capacity</span>
+                            </div>
+                        </div>
+                        <div class="config-row">
+                            <div class="config-item-full">
+                                <label>Individual Overrides:</label>
+                                <div id="individualOverrides" class="overrides-list"></div>
+                                <button class="btn-add-override" onclick="showAddOverrideModal()">+ Add Override</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Capacity Overview Metrics -->
+                <div class="capacity-metrics-grid" id="capacityMetricsGrid">
+                    <!-- Metrics will be dynamically generated -->
+                </div>
+
+                <!-- Resource Capacity Cards -->
+                <div class="resource-capacity-container">
+                    <div class="capacity-filter-bar">
+                        <h3>Resource Capacity Overview</h3>
+                        <div class="capacity-filter-buttons">
+                            <button class="capacity-filter-btn active" onclick="filterCapacityView('all')" data-filter="all">All</button>
+                            <button class="capacity-filter-btn" onclick="filterCapacityView('leads')" data-filter="leads">Leads</button>
+                            <button class="capacity-filter-btn" onclick="filterCapacityView('specialists')" data-filter="specialists">Specialists</button>
+                            <button class="capacity-filter-btn" onclick="filterCapacityView('overallocated')" data-filter="overallocated">Overallocated</button>
+                            <button class="capacity-filter-btn" onclick="filterCapacityView('available')" data-filter="available">Available</button>
+                        </div>
+                    </div>
+                    <div id="resourceCapacityCards" class="resource-cards-grid">
+                        <!-- Resource cards will be dynamically generated -->
+                    </div>
+                </div>
+
+                <!-- Capacity Chart -->
+                <div class="chart-card full-width">
+                    <h3>Team Capacity Utilization</h3>
+                    <canvas id="capacityUtilizationChart"></canvas>
+                </div>
+            </div>
+
             <!-- Tab: Data & Operations -->
             <div class="tab-content" id="tab-data-operations">
                 <!-- Data Quality Metrics -->
@@ -325,6 +395,37 @@
             </div>
         </div>
         <div class="side-panel-overlay" id="sidePanelOverlay" onclick="closeSidePanel()"></div>
+
+        <!-- Add Override Modal -->
+        <div class="modal-overlay" id="addOverrideModal" onclick="closeAddOverrideModal()">
+            <div class="modal-content" onclick="event.stopPropagation()">
+                <div class="modal-header">
+                    <h3>Add Capacity Override</h3>
+                    <button class="btn-close-modal" onclick="closeAddOverrideModal()">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Select Person:</label>
+                        <select id="overridePersonSelect">
+                            <option value="">-- Select Person --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Capacity Limit:</label>
+                        <input type="number" id="overrideCapacityInput" min="1" max="20" value="4">
+                        <span class="form-hint">concurrent projects</span>
+                    </div>
+                    <div class="form-group">
+                        <label>Reason (optional):</label>
+                        <input type="text" id="overrideReasonInput" placeholder="e.g., part-time, training period">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" onclick="closeAddOverrideModal()">Cancel</button>
+                    <button class="btn-primary" onclick="addCapacityOverride()">Add Override</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="app.js"></script>
