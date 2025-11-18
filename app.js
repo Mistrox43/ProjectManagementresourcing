@@ -279,6 +279,7 @@ function renderTabContent(tabName) {
         createRegionChart();
         createStatusChart();
         createTypeChart();
+        createLobChart();
     } else if (tabName === 'timeline-planning') {
         createTimelineChart();
         populateLeadTimelineSelect();
@@ -1460,6 +1461,49 @@ function createTypeChart() {
                     ticks: {
                         stepSize: 1
                     }
+                }
+            }
+        }
+    });
+}
+
+// LOB Chart
+function createLobChart() {
+    destroyChart('lobChart');
+
+    const lobCounts = {};
+    filteredData.forEach(project => {
+        const lob = project['LOB'];
+        if (lob) {
+            lobCounts[lob] = (lobCounts[lob] || 0) + 1;
+        }
+    });
+
+    const ctx = document.getElementById('lobChart').getContext('2d');
+    charts.lobChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(lobCounts),
+            datasets: [{
+                data: Object.values(lobCounts),
+                backgroundColor: [
+                    '#06b6d4',
+                    '#8b5cf6',
+                    '#ec4899',
+                    '#2563eb',
+                    '#10b981',
+                    '#f59e0b',
+                    '#ef4444',
+                    '#84cc16'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
                 }
             }
         }
