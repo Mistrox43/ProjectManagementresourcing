@@ -21,6 +21,16 @@ let filterOptions = {
     lead: []
 };
 
+// Capacity Planning configuration
+let capacityConfig = {
+    defaultLeadCapacity: 5,
+    defaultSpecialistCapacity: 8,
+    alertThreshold: 80,
+    individualOverrides: {}
+};
+
+let currentCapacityFilter = 'all'; // Current capacity view filter
+
 // Performance optimization variables
 let parsedDateCache = new Map(); // Cache for parsed dates
 let filterDebounceTimer = null; // Debounce timer for filter changes
@@ -55,6 +65,9 @@ function switchTab(tabName) {
 document.addEventListener('DOMContentLoaded', () => {
     const fileInput = document.getElementById('csvFileInput');
     fileInput.addEventListener('change', handleFileUpload);
+
+    // Load capacity configuration from localStorage
+    loadCapacityConfig();
 });
 
 // Optimized parseDate with caching
@@ -274,6 +287,8 @@ function renderTabContent(tabName) {
         createSpecialistTimelineChart();
         createGoLiveChart();
         createTestingChart();
+    } else if (tabName === 'capacity-planning') {
+        renderCapacityPlanning();
     } else if (tabName === 'data-operations') {
         // Data & Operations tab only needs table which is always rendered
         // No charts in this tab
@@ -2254,4 +2269,441 @@ function updateSidePanelContent() {
         prevBtn.disabled = sidePanelState.monthIndex === 0;
         nextBtn.disabled = sidePanelState.monthIndex === sidePanelState.allMonths.length - 1;
     }
+}
+
+// ==================== CAPACITY PLANNING FUNCTIONS ====================
+
+// Load capacity configuration from localStorage
+function loadCapacityConfig() {
+    const saved = localStorage.getItem('capacityConfig');
+    if (saved) {
+        try {
+            capacityConfig = JSON.parse(saved);
+        } catch (e) {
+            console.error('Error loading capacity config:', e);
+        }
+    }
+
+    // Update UI inputs if they exist
+    const leadInput = document.getElementById('defaultLeadCapacity');
+    const specialistInput = document.getElementById('defaultSpecialistCapacity');
+    const thresholdInput = document.getElementById('alertThreshold');
+
+    if (leadInput) leadInput.value = capacityConfig.defaultLeadCapacity;
+    if (specialistInput) specialistInput.value = capacityConfig.defaultSpecialistCapacity;
+    if (thresholdInput) thresholdInput.value = capacityConfig.alertThreshold;
+
+    renderCapacityOverrides();
+}
+
+// Save capacity configuration to localStorage
+function saveCapacityConfig() {
+    capacityConfig.defaultLeadCapacity = parseInt(document.getElementById('defaultLeadCapacity').value);
+    capacityConfig.defaultSpecialistCapacity = parseInt(document.getElementById('defaultSpecialistCapacity').value);
+    capacityConfig.alertThreshold = parseInt(document.getElementById('alertThreshold').value);
+
+    localStorage.setItem('capacityConfig', JSON.stringify(capacityConfig));
+
+    // Re-render capacity planning if on that tab
+    if (currentTab === 'capacity-planning') {
+        renderCapacityPlanning();
+    }
+}
+
+// Toggle capacity configuration panel
+function toggleCapacityConfig() {
+    const panel = document.getElementById('capacityConfigPanel');
+    const toggleText = document.getElementById('configToggleText');
+
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        toggleText.textContent = 'Hide Settings';
+    } else {
+        panel.style.display = 'none';
+        toggleText.textContent = 'Show Settings';
+    }
+}
+
+// Show modal for adding capacity override
+function showAddOverrideModal() {
+    const modal = document.getElementById('addOverrideModal');
+    const select = document.getElementById('overridePersonSelect');
+
+    // Populate select with all leads and specialists
+    const allPeople = new Set();
+    filteredData.forEach(p => {
+        if (p['OH Project Lead']) allPeople.add(p['OH Project Lead']);
+        if (p['OH Specialist(s)']) allPeople.add(p['OH Specialist(s)']);
+    });
+
+    select.innerHTML = '<option value="">-- Select Person --</option>' +
+        [...allPeople].sort().map(person => `<option value="${person}">${person}</option>`).join('');
+
+    document.getElementById('overrideCapacityInput').value = 4;
+    document.getElementById('overrideReasonInput').value = '';
+
+    modal.classList.add('open');
+}
+
+// Close add override modal
+function closeAddOverrideModal() {
+    document.getElementById('addOverrideModal').classList.remove('open');
+}
+
+// Add capacity override
+function addCapacityOverride() {
+    const person = document.getElementById('overridePersonSelect').value;
+    const capacity = parseInt(document.getElementById('overrideCapacityInput').value);
+    const reason = document.getElementById('overrideReasonInput').value;
+
+    if (!person) {
+        alert('Please select a person');
+        return;
+    }
+
+    capacityConfig.individualOverrides[person] = {
+        capacity,
+        reason: reason || null
+    };
+
+    saveCapacityConfig();
+    renderCapacityOverrides();
+    closeAddOverrideModal();
+
+    // Re-render capacity planning
+    if (currentTab === 'capacity-planning') {
+        renderCapacityPlanning();
+    }
+}
+
+// Remove capacity override
+function removeCapacityOverride(person) {
+    delete capacityConfig.individualOverrides[person];
+    saveCapacityConfig();
+    renderCapacityOverrides();
+
+    // Re-render capacity planning
+    if (currentTab === 'capacity-planning') {
+        renderCapacityPlanning();
+    }
+}
+
+// Render capacity overrides list
+function renderCapacityOverrides() {
+    const container = document.getElementById('individualOverrides');
+    if (!container) return;
+
+    const overrides = Object.entries(capacityConfig.individualOverrides);
+
+    if (overrides.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.875rem; font-style: italic;">No overrides configured</p>';
+        return;
+    }
+
+    container.innerHTML = overrides.map(([person, config]) => `
+        <div class="override-item">
+            <div class="override-info">
+                <span class="override-name">${person}</span>
+                <span class="override-capacity">${config.capacity} projects</span>
+                ${config.reason ? `<span class="override-reason">(${config.reason})</span>` : ''}
+            </div>
+            <button class="btn-remove-override" onclick="removeCapacityOverride('${person.replace(/'/g, "\\'")}')">Remove</button>
+        </div>
+    `).join('');
+}
+
+// Calculate resource capacity for a person
+function calculateResourceCapacity(person, role) {
+    const now = new Date();
+
+    // Get all active projects for this person
+    const personProjects = filteredData.filter(p => {
+        const isLead = p['OH Project Lead'] === person;
+        const isSpecialist = p['OH Specialist(s)'] === person;
+
+        const status = p['Project Status'];
+        const isActive = status && !status.toLowerCase().includes('complete') && !status.toLowerCase().includes('closed');
+
+        return (isLead || isSpecialist) && isActive;
+    });
+
+    const currentProjects = personProjects.length;
+
+    // Determine max capacity
+    let maxCapacity;
+    if (capacityConfig.individualOverrides[person]) {
+        maxCapacity = capacityConfig.individualOverrides[person].capacity;
+    } else if (role === 'Lead') {
+        maxCapacity = capacityConfig.defaultLeadCapacity;
+    } else {
+        maxCapacity = capacityConfig.defaultSpecialistCapacity;
+    }
+
+    const utilization = maxCapacity > 0 ? (currentProjects / maxCapacity) * 100 : 0;
+    const alertThreshold = capacityConfig.alertThreshold;
+
+    // Determine status
+    let status, statusClass;
+    if (utilization >= 100) {
+        status = 'Critical';
+        statusClass = 'critical';
+    } else if (utilization >= alertThreshold) {
+        status = 'High Load';
+        statusClass = 'warning';
+    } else if (utilization >= 50) {
+        status = 'Normal';
+        statusClass = 'normal';
+    } else {
+        status = 'Available';
+        statusClass = 'available';
+    }
+
+    // Calculate next available date
+    let nextAvailable = null;
+    if (currentProjects >= maxCapacity) {
+        // Find earliest project end date
+        const endDates = personProjects.map(p => parseDateCached(p['OH Go-Live Date'], p.__id)).filter(d => d);
+        if (endDates.length > 0) {
+            nextAvailable = new Date(Math.min(...endDates));
+        }
+    }
+
+    return {
+        person,
+        role,
+        currentProjects,
+        maxCapacity,
+        utilization: Math.round(utilization),
+        status,
+        statusClass,
+        nextAvailable,
+        projects: personProjects,
+        availableCapacity: Math.max(0, maxCapacity - currentProjects)
+    };
+}
+
+// Main render function for capacity planning tab
+function renderCapacityPlanning() {
+    renderCapacityMetrics();
+    renderCapacityCards();
+    createCapacityUtilizationChart();
+}
+
+// Render capacity metrics
+function renderCapacityMetrics() {
+    const metricsGrid = document.getElementById('capacityMetricsGrid');
+    if (!metricsGrid) return;
+
+    // Calculate all resource capacities
+    const leads = [...new Set(filteredData.map(p => p['OH Project Lead']).filter(l => l))];
+    const specialists = [...new Set(filteredData.map(p => p['OH Specialist(s)']).filter(s => s))];
+
+    const leadCapacities = leads.map(lead => calculateResourceCapacity(lead, 'Lead'));
+    const specialistCapacities = specialists.map(spec => calculateResourceCapacity(spec, 'Specialist'));
+
+    const allCapacities = [...leadCapacities, ...specialistCapacities];
+
+    // Calculate metrics
+    const overallocated = allCapacities.filter(c => c.utilization >= 100).length;
+    const highLoad = allCapacities.filter(c => c.utilization >= capacityConfig.alertThreshold && c.utilization < 100).length;
+    const available = allCapacities.filter(c => c.utilization < 50).length;
+    const avgUtilization = allCapacities.length > 0
+        ? Math.round(allCapacities.reduce((sum, c) => sum + c.utilization, 0) / allCapacities.length)
+        : 0;
+
+    const metrics = [
+        { label: 'Total Resources', value: allCapacities.length, subtitle: `${leads.length} Leads, ${specialists.length} Specialists`, clickable: false },
+        { label: 'Overallocated', value: overallocated, subtitle: 'At or above 100% capacity', clickable: false, color: 'danger' },
+        { label: 'High Load', value: highLoad, subtitle: `${capacityConfig.alertThreshold}% or higher capacity`, clickable: false, color: 'warning' },
+        { label: 'Available', value: available, subtitle: 'Below 50% capacity', clickable: false, color: 'success' },
+        { label: 'Avg Utilization', value: `${avgUtilization}%`, subtitle: 'Across all resources', clickable: false }
+    ];
+
+    metricsGrid.innerHTML = metrics.map(m => `
+        <div class="metric-card ${m.clickable ? 'metric-card-clickable' : ''}">
+            <div class="metric-label">${m.label}</div>
+            <div class="metric-value" style="${m.color ? `color: var(--${m.color}-color)` : ''}">${m.value}</div>
+            <div class="metric-subtitle">${m.subtitle}</div>
+        </div>
+    `).join('');
+}
+
+// Render capacity cards
+function renderCapacityCards() {
+    const container = document.getElementById('resourceCapacityCards');
+    if (!container) return;
+
+    // Calculate all resource capacities
+    const leads = [...new Set(filteredData.map(p => p['OH Project Lead']).filter(l => l))];
+    const specialists = [...new Set(filteredData.map(p => p['OH Specialist(s)']).filter(s => s))];
+
+    const leadCapacities = leads.map(lead => calculateResourceCapacity(lead, 'Lead'));
+    const specialistCapacities = specialists.map(spec => calculateResourceCapacity(spec, 'Specialist'));
+
+    let allCapacities = [...leadCapacities, ...specialistCapacities];
+
+    // Apply filter
+    if (currentCapacityFilter === 'leads') {
+        allCapacities = leadCapacities;
+    } else if (currentCapacityFilter === 'specialists') {
+        allCapacities = specialistCapacities;
+    } else if (currentCapacityFilter === 'overallocated') {
+        allCapacities = allCapacities.filter(c => c.utilization >= capacityConfig.alertThreshold);
+    } else if (currentCapacityFilter === 'available') {
+        allCapacities = allCapacities.filter(c => c.utilization < 70);
+    }
+
+    // Sort by utilization (highest first)
+    allCapacities.sort((a, b) => b.utilization - a.utilization);
+
+    if (allCapacities.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 2rem;">No resources match the current filter</p>';
+        return;
+    }
+
+    container.innerHTML = allCapacities.map(capacity => `
+        <div class="resource-capacity-card">
+            <div class="resource-card-header">
+                <div>
+                    <div class="resource-name">${capacity.person}</div>
+                    <div class="resource-role">${capacity.role}</div>
+                </div>
+                <span class="capacity-status-badge ${capacity.statusClass}">${capacity.status}</span>
+            </div>
+            <div class="capacity-progress-bar">
+                <div class="capacity-progress-fill ${capacity.statusClass}" style="width: ${Math.min(100, capacity.utilization)}%">
+                    ${capacity.utilization}%
+                </div>
+            </div>
+            <div class="capacity-details">
+                <div class="capacity-detail-item">
+                    <span class="capacity-detail-label">Current Load</span>
+                    <span class="capacity-detail-value">${capacity.currentProjects}/${capacity.maxCapacity}</span>
+                </div>
+                <div class="capacity-detail-item">
+                    <span class="capacity-detail-label">Available</span>
+                    <span class="capacity-detail-value">${capacity.availableCapacity} projects</span>
+                </div>
+            </div>
+            ${capacity.nextAvailable ? `
+                <div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border);">
+                    <span style="font-size: 0.75rem; color: var(--text-secondary);">Next available: </span>
+                    <span style="font-size: 0.875rem; font-weight: 600; color: var(--text-primary);">${formatDate(capacity.nextAvailable)}</span>
+                </div>
+            ` : ''}
+            ${capacity.projects.length > 0 ? `
+                <div class="active-projects-list">
+                    <h4>Active Projects (${capacity.projects.length})</h4>
+                    ${capacity.projects.slice(0, 5).map(p => `
+                        <div class="project-item">${p['Project Short Name'] || p['Facility Name']}</div>
+                    `).join('')}
+                    ${capacity.projects.length > 5 ? `<div class="project-item">+ ${capacity.projects.length - 5} more...</div>` : ''}
+                </div>
+            ` : ''}
+        </div>
+    `).join('');
+}
+
+// Filter capacity view
+function filterCapacityView(filter) {
+    currentCapacityFilter = filter;
+
+    // Update button states
+    document.querySelectorAll('.capacity-filter-btn').forEach(btn => {
+        if (btn.getAttribute('data-filter') === filter) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
+    renderCapacityCards();
+}
+
+// Create capacity utilization chart
+function createCapacityUtilizationChart() {
+    destroyChart('capacityUtilizationChart');
+
+    // Calculate all resource capacities
+    const leads = [...new Set(filteredData.map(p => p['OH Project Lead']).filter(l => l))];
+    const specialists = [...new Set(filteredData.map(p => p['OH Specialist(s)']).filter(s => s))];
+
+    const allPeople = [...leads, ...specialists];
+    const capacities = allPeople.map(person => {
+        const role = leads.includes(person) ? 'Lead' : 'Specialist';
+        return calculateResourceCapacity(person, role);
+    });
+
+    // Sort by utilization
+    capacities.sort((a, b) => b.utilization - a.utilization);
+
+    // Take top 20 for readability
+    const topCapacities = capacities.slice(0, 20);
+
+    const ctx = document.getElementById('capacityUtilizationChart');
+    if (!ctx) return;
+
+    charts.capacityUtilizationChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: topCapacities.map(c => c.person),
+            datasets: [{
+                label: 'Capacity Utilization (%)',
+                data: topCapacities.map(c => c.utilization),
+                backgroundColor: topCapacities.map(c => {
+                    if (c.utilization >= 100) return 'rgba(239, 68, 68, 0.8)';
+                    if (c.utilization >= capacityConfig.alertThreshold) return 'rgba(245, 158, 11, 0.8)';
+                    if (c.utilization >= 50) return 'rgba(37, 99, 235, 0.8)';
+                    return 'rgba(16, 185, 129, 0.8)';
+                }),
+                borderColor: topCapacities.map(c => {
+                    if (c.utilization >= 100) return 'rgb(239, 68, 68)';
+                    if (c.utilization >= capacityConfig.alertThreshold) return 'rgb(245, 158, 11)';
+                    if (c.utilization >= 50) return 'rgb(37, 99, 235)';
+                    return 'rgb(16, 185, 129)';
+                }),
+                borderWidth: 2
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const capacity = topCapacities[context.dataIndex];
+                            return [
+                                `Utilization: ${capacity.utilization}%`,
+                                `Current: ${capacity.currentProjects}/${capacity.maxCapacity} projects`,
+                                `Status: ${capacity.status}`
+                            ];
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    max: 120,
+                    title: {
+                        display: true,
+                        text: 'Capacity Utilization (%)'
+                    },
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)'
+                    }
+                },
+                y: {
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
 }
