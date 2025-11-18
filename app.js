@@ -2,6 +2,34 @@
 let projectData = [];
 let filteredData = [];
 let charts = {};
+let currentTab = 'current-status'; // Track active tab
+
+// Filter state for tag-based filters
+let activeFilters = {
+    region: [],
+    status: [],
+    type: [],
+    lob: [],
+    lead: []
+};
+
+let filterOptions = {
+    region: [],
+    status: [],
+    type: [],
+    lob: [],
+    lead: []
+};
+
+// Capacity Planning configuration
+let capacityConfig = {
+    defaultLeadCapacity: 5,
+    defaultSpecialistCapacity: 8,
+    alertThreshold: 80,
+    individualOverrides: {}
+};
+
+let currentCapacityFilter = 'all'; // Current capacity view filter
 
 // Performance optimization variables
 let parsedDateCache = new Map(); // Cache for parsed dates
@@ -9,10 +37,37 @@ let filterDebounceTimer = null; // Debounce timer for filter changes
 let isUpdating = false; // Flag to prevent concurrent updates
 let pendingUpdate = false; // Flag to track if an update is pending
 
+// Tab switching function
+function switchTab(tabName) {
+    // Update current tab
+    currentTab = tabName;
+
+    // Update tab buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        if (btn.getAttribute('data-tab') === tabName) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
+    // Update tab content
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById(`tab-${tabName}`).classList.add('active');
+
+    // Render charts for the active tab
+    renderTabContent(tabName);
+}
+
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
     const fileInput = document.getElementById('csvFileInput');
     fileInput.addEventListener('change', handleFileUpload);
+
+    // Load capacity configuration from localStorage
+    loadCapacityConfig();
 });
 
 // Optimized parseDate with caching
@@ -212,57 +267,217 @@ function parseCSV(csvText) {
 function initializeDashboard() {
     populateFilters();
     updateMetrics();
-    createCharts();
+    renderTabContent(currentTab);
     renderTable();
+}
+
+// Render content for active tab
+function renderTabContent(tabName) {
+    if (tabName === 'current-status') {
+        createLeadWorkloadChart();
+        createSpecialistWorkloadChart();
+        createRegionChart();
+        createStatusChart();
+        createTypeChart();
+        createLobChart();
+    } else if (tabName === 'timeline-planning') {
+        createTimelineChart();
+        populateLeadTimelineSelect();
+        populateSpecialistTimelineSelect();
+        createLeadTimelineChart();
+        createSpecialistTimelineChart();
+        createGoLiveChart();
+        createTestingChart();
+    } else if (tabName === 'capacity-planning') {
+        renderCapacityPlanning();
+    } else if (tabName === 'data-operations') {
+        // Data & Operations tab only needs table which is always rendered
+        // No charts in this tab
+    }
 }
 
 // Populate filter dropdowns
 function populateFilters() {
-    const regions = [...new Set(projectData.map(p => p['OH Region']).filter(r => r))];
-    const statuses = [...new Set(projectData.map(p => p['Project Status']).filter(s => s))];
-    const types = [...new Set(projectData.map(p => p['Project Type']).filter(t => t))];
-    const lobs = [...new Set(projectData.map(p => p['LOB']).filter(l => l))];
-    const leads = [...new Set(projectData.map(p => p['OH Project Lead']).filter(l => l))];
+    const regions = [...new Set(projectData.map(p => p['OH Region']).filter(r => r))].sort();
+    const statuses = [...new Set(projectData.map(p => p['Project Status']).filter(s => s))].sort();
+    const types = [...new Set(projectData.map(p => p['Project Type']).filter(t => t))].sort();
+    const lobs = [...new Set(projectData.map(p => p['LOB']).filter(l => l))].sort();
+    const leads = [...new Set(projectData.map(p => p['OH Project Lead']).filter(l => l))].sort();
 
-    populateSelect('regionFilter', regions);
-    populateSelect('statusFilter', statuses);
-    populateSelect('typeFilter', types);
-    populateSelect('lobFilter', lobs);
-    populateSelect('leadFilter', leads);
+    filterOptions.region = regions;
+    filterOptions.status = statuses;
+    filterOptions.type = types;
+    filterOptions.lob = lobs;
+    filterOptions.lead = leads;
+
+    populateFilterDropdown('regionFilterOptions', 'region', regions);
+    populateFilterDropdown('statusFilterOptions', 'status', statuses);
+    populateFilterDropdown('typeFilterOptions', 'type', types);
+    populateFilterDropdown('lobFilterOptions', 'lob', lobs);
+    populateFilterDropdown('leadFilterOptions', 'lead', leads);
+
+    updateActiveFiltersDisplay();
 }
 
-function populateSelect(id, options) {
-    const select = document.getElementById(id);
-    // Get currently selected values
-    const currentValues = Array.from(select.selectedOptions).map(opt => opt.value);
+function populateFilterDropdown(containerId, filterType, options) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = options.map(option => `
+        <div class="filter-option" onclick="toggleFilterOption('${filterType}', '${option.replace(/'/g, "\\'")}')">
+            <input type="checkbox" id="${filterType}-${option.replace(/[^a-zA-Z0-9]/g, '_')}"
+                   ${activeFilters[filterType].includes(option) ? 'checked' : ''}>
+            <label for="${filterType}-${option.replace(/[^a-zA-Z0-9]/g, '_')}">${option}</label>
+        </div>
+    `).join('');
+}
 
-    // Keep "All" option
-    select.innerHTML = `<option value="all">${select.options[0].text}</option>`;
+// Toggle filter dropdown (kept for backwards compatibility if needed)
+function toggleFilterDropdown() {
+    const dropdown = document.getElementById('filterDropdown');
+    if (dropdown) {
+        dropdown.classList.toggle('open');
 
-    options.sort().forEach(option => {
-        const opt = document.createElement('option');
-        opt.value = option;
-        opt.textContent = option;
-        select.appendChild(opt);
+        // Close dropdown when clicking outside
+        if (dropdown.classList.contains('open')) {
+            setTimeout(() => {
+                document.addEventListener('click', closeDropdownOnClickOutside);
+            }, 0);
+        } else {
+            document.removeEventListener('click', closeDropdownOnClickOutside);
+        }
+    }
+}
+
+// Toggle category-specific dropdown
+function toggleCategoryDropdown(category) {
+    const dropdownId = category + 'Dropdown';
+    const dropdown = document.getElementById(dropdownId);
+
+    if (!dropdown) return;
+
+    // Close all other dropdowns first
+    const allDropdowns = document.querySelectorAll('.filter-dropdown');
+    allDropdowns.forEach(dd => {
+        if (dd.id !== dropdownId) {
+            dd.classList.remove('open');
+        }
     });
 
-    // Restore previous selections if they still exist in the new options
-    if (currentValues.length > 0) {
-        Array.from(select.options).forEach(option => {
-            if (currentValues.includes(option.value) && (option.value === 'all' || options.includes(option.value))) {
-                option.selected = true;
-            }
-        });
+    // Toggle the clicked dropdown
+    dropdown.classList.toggle('open');
+
+    // Close dropdown when clicking outside
+    if (dropdown.classList.contains('open')) {
+        setTimeout(() => {
+            document.addEventListener('click', closeDropdownOnClickOutside);
+        }, 0);
     } else {
-        // If nothing was selected, select "All" by default
-        select.options[0].selected = true;
+        document.removeEventListener('click', closeDropdownOnClickOutside);
+    }
+}
+
+function closeDropdownOnClickOutside(event) {
+    // Check for old single dropdown (backwards compatibility)
+    const dropdown = document.getElementById('filterDropdown');
+    const button = document.querySelector('.btn-add-filter');
+
+    if (dropdown && button) {
+        if (!dropdown.contains(event.target) && !button.contains(event.target)) {
+            dropdown.classList.remove('open');
+            document.removeEventListener('click', closeDropdownOnClickOutside);
+            return;
+        }
+    }
+
+    // Check for new category dropdowns
+    const allDropdowns = document.querySelectorAll('.filter-dropdown.open');
+    const allButtons = document.querySelectorAll('.btn-filter-category');
+
+    let clickedInsideDropdown = false;
+    let clickedButton = false;
+
+    allDropdowns.forEach(dd => {
+        if (dd.contains(event.target)) {
+            clickedInsideDropdown = true;
+        }
+    });
+
+    allButtons.forEach(btn => {
+        if (btn.contains(event.target)) {
+            clickedButton = true;
+        }
+    });
+
+    // If clicked outside all dropdowns and buttons, close all dropdowns
+    if (!clickedInsideDropdown && !clickedButton) {
+        allDropdowns.forEach(dd => {
+            dd.classList.remove('open');
+        });
+        document.removeEventListener('click', closeDropdownOnClickOutside);
+    }
+}
+
+// Toggle individual filter option
+function toggleFilterOption(filterType, value) {
+    const index = activeFilters[filterType].indexOf(value);
+
+    if (index === -1) {
+        activeFilters[filterType].push(value);
+    } else {
+        activeFilters[filterType].splice(index, 1);
+    }
+
+    updateActiveFiltersDisplay();
+    applyFilters();
+}
+
+// Remove filter tag
+function removeFilterTag(filterType, value) {
+    const index = activeFilters[filterType].indexOf(value);
+    if (index !== -1) {
+        activeFilters[filterType].splice(index, 1);
+    }
+
+    // Update checkbox state in dropdown
+    populateFilterDropdown(`${filterType}FilterOptions`, filterType, filterOptions[filterType]);
+
+    updateActiveFiltersDisplay();
+    applyFilters();
+}
+
+// Update active filters display
+function updateActiveFiltersDisplay() {
+    const container = document.getElementById('activeFilters');
+    const tags = [];
+
+    const categoryLabels = {
+        region: 'Region',
+        status: 'Status',
+        type: 'Type',
+        lob: 'LOB',
+        lead: 'Lead'
+    };
+
+    Object.keys(activeFilters).forEach(filterType => {
+        activeFilters[filterType].forEach(value => {
+            tags.push(`
+                <div class="filter-tag">
+                    <span class="filter-tag-category">${categoryLabels[filterType]}:</span>
+                    <span>${value}</span>
+                    <button class="filter-tag-remove" onclick="removeFilterTag('${filterType}', '${value.replace(/'/g, "\\'")}')">×</button>
+                </div>
+            `);
+        });
+    });
+
+    if (tags.length === 0) {
+        container.innerHTML = '<span class="no-filters-msg">No filters applied</span>';
+    } else {
+        container.innerHTML = tags.join('');
     }
 }
 
 // Update key metrics - OPTIMIZED: Single pass through data
 function updateMetrics() {
-    const metricsGrid = document.getElementById('metricsGrid');
-
     const now = new Date();
     const sixtyDaysFromNow = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000));
 
@@ -277,6 +492,9 @@ function updateMetrics() {
     let missingTestEnd = 0;
     let missingAnyTestDate = 0;
     let testingNotRequired = 0;
+    let noLead = 0;
+    let noSpecialists = 0;
+    let multipleSpecialists = 0;
 
     const uniqueLeads = new Set();
     const uniqueSpecialists = new Set();
@@ -299,6 +517,20 @@ function updateMetrics() {
         // Unique leads and specialists
         if (p['OH Project Lead']) uniqueLeads.add(p['OH Project Lead']);
         if (p['OH Specialist(s)']) uniqueSpecialists.add(p['OH Specialist(s)']);
+
+        // Projects without lead
+        if (!p['OH Project Lead'] || p['OH Project Lead'].trim() === '') {
+            noLead++;
+        }
+
+        // Specialist assignment issues
+        const specialists = p['OH Specialist(s)'];
+        if (!specialists || specialists.trim() === '') {
+            noSpecialists++;
+        } else if (specialists.includes(',') || specialists.includes(';')) {
+            // Check for multiple specialists (separated by comma or semicolon)
+            multipleSpecialists++;
+        }
 
         // Upcoming go-lives
         if (goLiveDate && goLiveDate > now && goLiveDate <= sixtyDaysFromNow) {
@@ -349,77 +581,83 @@ function updateMetrics() {
     }
     document.getElementById('dateRangeDisplay').textContent = dateRangeText;
 
-    const metrics = [
+    // Tab 1: Current Status metrics
+    const currentMetrics = [
         { label: 'Total Projects', value: totalProjects, subtitle: 'All projects', clickable: false },
         { label: 'Active Projects', value: activeProjects, subtitle: 'In progress', clickable: false },
-        { label: 'Upcoming Go-Lives', value: upcomingGoLives, subtitle: 'Next 60 days', clickable: false },
-        { label: 'In Testing', value: inTesting, subtitle: 'Currently testing', clickable: false },
-        { label: 'Missing Date Data', value: missingAnyDate, subtitle: `Go-Live: ${missingGoLive}, Kick-Off: ${missingKickOff}`, clickable: true },
-        { label: 'Missing Testing Dates', value: missingAnyTestDate, subtitle: `Test Start: ${missingTestStart}, Test End: ${missingTestEnd}, Not Required: ${testingNotRequired}`, clickable: true },
         { label: 'Project Leads', value: uniqueLeads.size, subtitle: 'Unique leads', clickable: false },
         { label: 'Specialists', value: uniqueSpecialists.size, subtitle: 'Unique specialists', clickable: false }
     ];
 
-    metricsGrid.innerHTML = metrics.map(m => `
-        <div class="metric-card ${m.clickable ? 'metric-card-clickable' : ''}" ${m.clickable ? `onclick="${m.label === 'Missing Date Data' ? 'openMissingDatesPanel()' : 'openMissingTestingDatesPanel()'}"` : ''}>
-            <div class="metric-label">${m.label}</div>
-            <div class="metric-value">${m.value}</div>
-            <div class="metric-subtitle">${m.subtitle}</div>
-        </div>
-    `).join('');
+    // Tab 2: Timeline & Planning metrics
+    const timelineMetrics = [
+        { label: 'Upcoming Go-Lives', value: upcomingGoLives, subtitle: 'Next 60 days', clickable: false },
+        { label: 'In Testing', value: inTesting, subtitle: 'Currently testing', clickable: false }
+    ];
+
+    // Tab 3: Data & Operations metrics
+    const specialistIssues = noSpecialists + multipleSpecialists;
+    const dataMetrics = [
+        { label: 'Missing Date Data', value: missingAnyDate, subtitle: `Go-Live: ${missingGoLive}, Kick-Off: ${missingKickOff}`, clickable: true },
+        { label: 'Missing Testing Dates', value: missingAnyTestDate, subtitle: `Test Start: ${missingTestStart}, Test End: ${missingTestEnd}, Not Required: ${testingNotRequired}`, clickable: true },
+        { label: 'Projects Without Lead', value: noLead, subtitle: 'No lead assigned', clickable: true },
+        { label: 'Specialist Assignment Issues', value: specialistIssues, subtitle: `No Specialists: ${noSpecialists}, Multiple Specialists: ${multipleSpecialists}`, clickable: true }
+    ];
+
+    // Populate metrics for each tab
+    const metricsGridCurrent = document.getElementById('metricsGridCurrent');
+    const metricsGridTimeline = document.getElementById('metricsGridTimeline');
+    const metricsGridData = document.getElementById('metricsGridData');
+
+    if (metricsGridCurrent) {
+        metricsGridCurrent.innerHTML = currentMetrics.map(m => `
+            <div class="metric-card ${m.clickable ? 'metric-card-clickable' : ''}" ${m.clickable ? `onclick="${m.label === 'Missing Date Data' ? 'openMissingDatesPanel()' : 'openMissingTestingDatesPanel()'}"` : ''}>
+                <div class="metric-label">${m.label}</div>
+                <div class="metric-value">${m.value}</div>
+                <div class="metric-subtitle">${m.subtitle}</div>
+            </div>
+        `).join('');
+    }
+
+    if (metricsGridTimeline) {
+        metricsGridTimeline.innerHTML = timelineMetrics.map(m => `
+            <div class="metric-card ${m.clickable ? 'metric-card-clickable' : ''}" ${m.clickable ? `onclick="${m.label === 'Missing Date Data' ? 'openMissingDatesPanel()' : 'openMissingTestingDatesPanel()'}"` : ''}>
+                <div class="metric-label">${m.label}</div>
+                <div class="metric-value">${m.value}</div>
+                <div class="metric-subtitle">${m.subtitle}</div>
+            </div>
+        `).join('');
+    }
+
+    if (metricsGridData) {
+        metricsGridData.innerHTML = dataMetrics.map(m => {
+            let clickHandler = '';
+            if (m.clickable) {
+                if (m.label === 'Missing Date Data') {
+                    clickHandler = 'openMissingDatesPanel()';
+                } else if (m.label === 'Missing Testing Dates') {
+                    clickHandler = 'openMissingTestingDatesPanel()';
+                } else if (m.label === 'Projects Without Lead') {
+                    clickHandler = 'openNoLeadPanel()';
+                } else if (m.label === 'Specialist Assignment Issues') {
+                    clickHandler = 'openSpecialistIssuesPanel()';
+                }
+            }
+            return `
+                <div class="metric-card ${m.clickable ? 'metric-card-clickable' : ''}" ${m.clickable ? `onclick="${clickHandler}"` : ''}>
+                    <div class="metric-label">${m.label}</div>
+                    <div class="metric-value">${m.value}</div>
+                    <div class="metric-subtitle">${m.subtitle}</div>
+                </div>
+            `;
+        }).join('');
+    }
 }
 
-// Create all charts - OPTIMIZED: Async with loading indicators
+// Create all charts - Now uses renderTabContent for active tab only
 async function createCharts() {
-    // Prevent concurrent updates
-    if (isUpdating) {
-        pendingUpdate = true;
-        return;
-    }
-
-    isUpdating = true;
-    showLoading('Updating charts...');
-
-    try {
-        // Use requestAnimationFrame to allow UI updates
-        await new Promise(resolve => requestAnimationFrame(resolve));
-
-        // Batch 1: Main timeline and workload charts
-        createTimelineChart();
-        createLeadWorkloadChart();
-        createSpecialistWorkloadChart();
-
-        await new Promise(resolve => requestAnimationFrame(resolve));
-
-        // Batch 2: Timeline selects and charts
-        populateLeadTimelineSelect();
-        populateSpecialistTimelineSelect();
-        createLeadTimelineChart();
-        createSpecialistTimelineChart();
-
-        await new Promise(resolve => requestAnimationFrame(resolve));
-
-        // Batch 3: Distribution charts
-        createRegionChart();
-        createStatusChart();
-        createTypeChart();
-
-        await new Promise(resolve => requestAnimationFrame(resolve));
-
-        // Batch 4: Date-based charts
-        createGoLiveChart();
-        createTestingChart();
-
-    } finally {
-        isUpdating = false;
-        hideLoading();
-
-        // If there was a pending update, execute it
-        if (pendingUpdate) {
-            pendingUpdate = false;
-            setTimeout(() => createCharts(), 100);
-        }
-    }
+    // Render content for current active tab
+    renderTabContent(currentTab);
 }
 
 // Timeline Chart - Concurrent Active Projects and Testing over time
@@ -1229,6 +1467,49 @@ function createTypeChart() {
     });
 }
 
+// LOB Chart
+function createLobChart() {
+    destroyChart('lobChart');
+
+    const lobCounts = {};
+    filteredData.forEach(project => {
+        const lob = project['LOB'];
+        if (lob) {
+            lobCounts[lob] = (lobCounts[lob] || 0) + 1;
+        }
+    });
+
+    const ctx = document.getElementById('lobChart').getContext('2d');
+    charts.lobChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(lobCounts),
+            datasets: [{
+                data: Object.values(lobCounts),
+                backgroundColor: [
+                    '#06b6d4',
+                    '#8b5cf6',
+                    '#ec4899',
+                    '#2563eb',
+                    '#10b981',
+                    '#f59e0b',
+                    '#ef4444',
+                    '#84cc16'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+}
+
 // Go-Live Chart - Monthly trend
 function createGoLiveChart() {
     destroyChart('goLiveChart');
@@ -1416,29 +1697,25 @@ function applyFilters() {
     }
 
     // Debounce filter application to prevent rapid successive calls
-    filterDebounceTimer = setTimeout(async () => {
+    filterDebounceTimer = setTimeout(() => {
         showLoading('Applying filters...');
 
         try {
-            // Get selected values from multi-select filters
-            const regionFilter = Array.from(document.getElementById('regionFilter').selectedOptions).map(opt => opt.value);
-            const statusFilter = Array.from(document.getElementById('statusFilter').selectedOptions).map(opt => opt.value);
-            const typeFilter = Array.from(document.getElementById('typeFilter').selectedOptions).map(opt => opt.value);
-            const lobFilter = Array.from(document.getElementById('lobFilter').selectedOptions).map(opt => opt.value);
-            const leadFilter = Array.from(document.getElementById('leadFilter').selectedOptions).map(opt => opt.value);
-
-            // Apply filters to data
+            // Apply filters to data based on active filter tags
             filteredData = projectData.filter(project => {
-                return (regionFilter.includes('all') || regionFilter.includes(project['OH Region'])) &&
-                       (statusFilter.includes('all') || statusFilter.includes(project['Project Status'])) &&
-                       (typeFilter.includes('all') || typeFilter.includes(project['Project Type'])) &&
-                       (lobFilter.includes('all') || lobFilter.includes(project['LOB'])) &&
-                       (leadFilter.includes('all') || leadFilter.includes(project['OH Project Lead']));
+                // If no filters are active for a category, include all projects for that category
+                const regionMatch = activeFilters.region.length === 0 || activeFilters.region.includes(project['OH Region']);
+                const statusMatch = activeFilters.status.length === 0 || activeFilters.status.includes(project['Project Status']);
+                const typeMatch = activeFilters.type.length === 0 || activeFilters.type.includes(project['Project Type']);
+                const lobMatch = activeFilters.lob.length === 0 || activeFilters.lob.includes(project['LOB']);
+                const leadMatch = activeFilters.lead.length === 0 || activeFilters.lead.includes(project['OH Project Lead']);
+
+                return regionMatch && statusMatch && typeMatch && lobMatch && leadMatch;
             });
 
             // Update UI components
             updateMetrics();
-            await createCharts(); // Wait for async chart creation
+            renderTabContent(currentTab);
             renderTable();
 
         } finally {
@@ -1448,23 +1725,31 @@ function applyFilters() {
 }
 
 // Clear all filters - OPTIMIZED: Async with loading indicator
-async function clearFilters() {
+function clearFilters() {
     showLoading('Clearing filters...');
 
     try {
-        // Clear multi-select filters by deselecting all and selecting only "all"
-        ['regionFilter', 'statusFilter', 'typeFilter', 'lobFilter', 'leadFilter'].forEach(filterId => {
-            const select = document.getElementById(filterId);
-            Array.from(select.options).forEach(option => {
-                option.selected = (option.value === 'all');
-            });
-        });
+        // Clear all active filters
+        activeFilters.region = [];
+        activeFilters.status = [];
+        activeFilters.type = [];
+        activeFilters.lob = [];
+        activeFilters.lead = [];
+
+        // Update dropdown checkboxes
+        populateFilterDropdown('regionFilterOptions', 'region', filterOptions.region);
+        populateFilterDropdown('statusFilterOptions', 'status', filterOptions.status);
+        populateFilterDropdown('typeFilterOptions', 'type', filterOptions.type);
+        populateFilterDropdown('lobFilterOptions', 'lob', filterOptions.lob);
+        populateFilterDropdown('leadFilterOptions', 'lead', filterOptions.lead);
 
         document.getElementById('searchBox').value = '';
 
+        updateActiveFiltersDisplay();
+
         filteredData = [...projectData];
         updateMetrics();
-        await createCharts();
+        renderTabContent(currentTab);
         renderTable();
 
     } finally {
@@ -1481,6 +1766,13 @@ function resetDashboard() {
 
     projectData = [];
     filteredData = [];
+
+    // Clear active filters
+    activeFilters.region = [];
+    activeFilters.status = [];
+    activeFilters.type = [];
+    activeFilters.lob = [];
+    activeFilters.lead = [];
 
     Object.values(charts).forEach(chart => chart.destroy());
     charts = {};
@@ -1660,6 +1952,38 @@ function openMissingTestingDatesPanel() {
     sidePanelState = {
         isOpen: true,
         chartType: 'missing-testing-dates',
+        monthIndex: 0,
+        allMonths: [],
+        chartData: null
+    };
+
+    document.getElementById('sidePanel').classList.add('open');
+    document.getElementById('sidePanelOverlay').classList.add('open');
+
+    updateSidePanelContent();
+}
+
+// Open No Lead Panel
+function openNoLeadPanel() {
+    sidePanelState = {
+        isOpen: true,
+        chartType: 'no-lead',
+        monthIndex: 0,
+        allMonths: [],
+        chartData: null
+    };
+
+    document.getElementById('sidePanel').classList.add('open');
+    document.getElementById('sidePanelOverlay').classList.add('open');
+
+    updateSidePanelContent();
+}
+
+// Open Specialist Issues Panel
+function openSpecialistIssuesPanel() {
+    sidePanelState = {
+        isOpen: true,
+        chartType: 'specialist-issues',
         monthIndex: 0,
         allMonths: [],
         chartData: null
@@ -1918,6 +2242,191 @@ function updateSidePanelContent() {
         return;
     }
 
+    // Handle no-lead panel
+    if (sidePanelState.chartType === 'no-lead') {
+        document.getElementById('panelTitle').textContent = 'Projects Without Lead';
+        document.querySelector('.panel-navigation').style.display = 'none';
+
+        // Get projects without lead
+        const noLeadProjects = filteredData.filter(p =>
+            !p['OH Project Lead'] || p['OH Project Lead'].trim() === ''
+        );
+
+        // Update summary stats
+        const summaryHTML = `
+            <div class="panel-stat">
+                <div class="panel-stat-label">Projects Without Lead</div>
+                <div class="panel-stat-value">${noLeadProjects.length}</div>
+            </div>
+        `;
+        document.getElementById('panelSummary').innerHTML = summaryHTML;
+
+        // Display all projects without lead
+        if (noLeadProjects.length === 0) {
+            document.getElementById('panelProjects').innerHTML = `
+                <div class="panel-empty">
+                    <div class="panel-empty-icon">✓</div>
+                    <p>All projects have an assigned lead!</p>
+                </div>
+            `;
+        } else {
+            const projectsHTML = noLeadProjects.map(project => {
+                const facilityName = project['Facility Name'] || 'Unknown Facility';
+                const projectShortName = project['Project Short Name'] || '';
+                const specialist = project['OH Specialist(s)'] || 'Not Assigned';
+                const status = project['Project Status'] || 'Unknown';
+                const region = project['OH Region'] || 'Unknown';
+                const projectType = project['Project Type'] || 'Unknown';
+                const lob = project['LOB'] || 'Unknown';
+
+                const statusClass = getStatusClass(status);
+
+                return `
+                    <div class="project-card">
+                        <div class="project-card-header">
+                            <h4 class="project-name">${facilityName}</h4>
+                            <span class="status-badge ${statusClass}">${status}</span>
+                        </div>
+                        <div class="project-card-body">
+                            ${projectShortName ? `<div class="project-info-row">
+                                <span class="project-info-label">Project:</span>
+                                <span class="project-info-value">${projectShortName}</span>
+                            </div>` : ''}
+                            <div class="project-info-row">
+                                <span class="project-info-label">Type:</span>
+                                <span class="project-info-value">${projectType}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Region:</span>
+                                <span class="project-info-value">${region}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">LOB:</span>
+                                <span class="project-info-value">${lob}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Specialist:</span>
+                                <span class="project-info-value">${specialist}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('panelProjects').innerHTML = projectsHTML;
+        }
+        return;
+    }
+
+    // Handle specialist-issues panel
+    if (sidePanelState.chartType === 'specialist-issues') {
+        document.getElementById('panelTitle').textContent = 'Specialist Assignment Issues';
+        document.querySelector('.panel-navigation').style.display = 'none';
+
+        // Get projects with specialist issues
+        const noSpecialistsProjects = filteredData.filter(p =>
+            !p['OH Specialist(s)'] || p['OH Specialist(s)'].trim() === ''
+        );
+        const multipleSpecialistsProjects = filteredData.filter(p => {
+            const specialists = p['OH Specialist(s)'];
+            return specialists && specialists.trim() !== '' &&
+                   (specialists.includes(',') || specialists.includes(';'));
+        });
+        const allIssueProjects = [...noSpecialistsProjects, ...multipleSpecialistsProjects];
+
+        // Update summary stats
+        const summaryHTML = `
+            <div class="panel-stat">
+                <div class="panel-stat-label">Total Issues</div>
+                <div class="panel-stat-value">${allIssueProjects.length}</div>
+            </div>
+            <div class="panel-stat">
+                <div class="panel-stat-label">No Specialists</div>
+                <div class="panel-stat-value">${noSpecialistsProjects.length}</div>
+            </div>
+            <div class="panel-stat">
+                <div class="panel-stat-label">Multiple Specialists</div>
+                <div class="panel-stat-value">${multipleSpecialistsProjects.length}</div>
+            </div>
+        `;
+        document.getElementById('panelSummary').innerHTML = summaryHTML;
+
+        // Display all projects with specialist issues
+        if (allIssueProjects.length === 0) {
+            document.getElementById('panelProjects').innerHTML = `
+                <div class="panel-empty">
+                    <div class="panel-empty-icon">✓</div>
+                    <p>All projects have exactly one specialist assigned!</p>
+                </div>
+            `;
+        } else {
+            const projectsHTML = allIssueProjects.map(project => {
+                const facilityName = project['Facility Name'] || 'Unknown Facility';
+                const projectShortName = project['Project Short Name'] || '';
+                const projectLead = project['OH Project Lead'] || 'Not Assigned';
+                const specialist = project['OH Specialist(s)'] || 'Not Assigned';
+                const status = project['Project Status'] || 'Unknown';
+                const region = project['OH Region'] || 'Unknown';
+                const projectType = project['Project Type'] || 'Unknown';
+                const lob = project['LOB'] || 'Unknown';
+
+                const statusClass = getStatusClass(status);
+
+                // Determine issue type
+                let issueType = '';
+                if (!specialist || specialist.trim() === '') {
+                    issueType = 'No Specialist Assigned';
+                } else if (specialist.includes(',') || specialist.includes(';')) {
+                    issueType = 'Multiple Specialists';
+                }
+
+                return `
+                    <div class="project-card">
+                        <div class="project-card-header">
+                            <h4 class="project-name">${facilityName}</h4>
+                            <span class="status-badge ${statusClass}">${status}</span>
+                        </div>
+                        <div class="project-card-body">
+                            ${projectShortName ? `<div class="project-info-row">
+                                <span class="project-info-label">Project:</span>
+                                <span class="project-info-value">${projectShortName}</span>
+                            </div>` : ''}
+                            <div class="project-info-row">
+                                <span class="project-info-label">Type:</span>
+                                <span class="project-info-value">${projectType}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Region:</span>
+                                <span class="project-info-value">${region}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">LOB:</span>
+                                <span class="project-info-value">${lob}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Lead:</span>
+                                <span class="project-info-value">${projectLead}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Specialist(s):</span>
+                                <span class="project-info-value">${specialist}</span>
+                            </div>
+                        </div>
+                        <div class="project-missing-dates">
+                            <div class="missing-dates-label">Issue:</div>
+                            <div class="missing-dates-list">
+                                <span class="missing-date-badge">${issueType}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('panelProjects').innerHTML = projectsHTML;
+        }
+        return;
+    }
+
     // Handle timeline panels
     document.querySelector('.panel-navigation').style.display = 'flex';
 
@@ -2116,4 +2625,441 @@ function updateSidePanelContent() {
         prevBtn.disabled = sidePanelState.monthIndex === 0;
         nextBtn.disabled = sidePanelState.monthIndex === sidePanelState.allMonths.length - 1;
     }
+}
+
+// ==================== CAPACITY PLANNING FUNCTIONS ====================
+
+// Load capacity configuration from localStorage
+function loadCapacityConfig() {
+    const saved = localStorage.getItem('capacityConfig');
+    if (saved) {
+        try {
+            capacityConfig = JSON.parse(saved);
+        } catch (e) {
+            console.error('Error loading capacity config:', e);
+        }
+    }
+
+    // Update UI inputs if they exist
+    const leadInput = document.getElementById('defaultLeadCapacity');
+    const specialistInput = document.getElementById('defaultSpecialistCapacity');
+    const thresholdInput = document.getElementById('alertThreshold');
+
+    if (leadInput) leadInput.value = capacityConfig.defaultLeadCapacity;
+    if (specialistInput) specialistInput.value = capacityConfig.defaultSpecialistCapacity;
+    if (thresholdInput) thresholdInput.value = capacityConfig.alertThreshold;
+
+    renderCapacityOverrides();
+}
+
+// Save capacity configuration to localStorage
+function saveCapacityConfig() {
+    capacityConfig.defaultLeadCapacity = parseInt(document.getElementById('defaultLeadCapacity').value);
+    capacityConfig.defaultSpecialistCapacity = parseInt(document.getElementById('defaultSpecialistCapacity').value);
+    capacityConfig.alertThreshold = parseInt(document.getElementById('alertThreshold').value);
+
+    localStorage.setItem('capacityConfig', JSON.stringify(capacityConfig));
+
+    // Re-render capacity planning if on that tab
+    if (currentTab === 'capacity-planning') {
+        renderCapacityPlanning();
+    }
+}
+
+// Toggle capacity configuration panel
+function toggleCapacityConfig() {
+    const panel = document.getElementById('capacityConfigPanel');
+    const toggleText = document.getElementById('configToggleText');
+
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        toggleText.textContent = 'Hide Settings';
+    } else {
+        panel.style.display = 'none';
+        toggleText.textContent = 'Show Settings';
+    }
+}
+
+// Show modal for adding capacity override
+function showAddOverrideModal() {
+    const modal = document.getElementById('addOverrideModal');
+    const select = document.getElementById('overridePersonSelect');
+
+    // Populate select with all leads and specialists
+    const allPeople = new Set();
+    filteredData.forEach(p => {
+        if (p['OH Project Lead']) allPeople.add(p['OH Project Lead']);
+        if (p['OH Specialist(s)']) allPeople.add(p['OH Specialist(s)']);
+    });
+
+    select.innerHTML = '<option value="">-- Select Person --</option>' +
+        [...allPeople].sort().map(person => `<option value="${person}">${person}</option>`).join('');
+
+    document.getElementById('overrideCapacityInput').value = 4;
+    document.getElementById('overrideReasonInput').value = '';
+
+    modal.classList.add('open');
+}
+
+// Close add override modal
+function closeAddOverrideModal() {
+    document.getElementById('addOverrideModal').classList.remove('open');
+}
+
+// Add capacity override
+function addCapacityOverride() {
+    const person = document.getElementById('overridePersonSelect').value;
+    const capacity = parseInt(document.getElementById('overrideCapacityInput').value);
+    const reason = document.getElementById('overrideReasonInput').value;
+
+    if (!person) {
+        alert('Please select a person');
+        return;
+    }
+
+    capacityConfig.individualOverrides[person] = {
+        capacity,
+        reason: reason || null
+    };
+
+    saveCapacityConfig();
+    renderCapacityOverrides();
+    closeAddOverrideModal();
+
+    // Re-render capacity planning
+    if (currentTab === 'capacity-planning') {
+        renderCapacityPlanning();
+    }
+}
+
+// Remove capacity override
+function removeCapacityOverride(person) {
+    delete capacityConfig.individualOverrides[person];
+    saveCapacityConfig();
+    renderCapacityOverrides();
+
+    // Re-render capacity planning
+    if (currentTab === 'capacity-planning') {
+        renderCapacityPlanning();
+    }
+}
+
+// Render capacity overrides list
+function renderCapacityOverrides() {
+    const container = document.getElementById('individualOverrides');
+    if (!container) return;
+
+    const overrides = Object.entries(capacityConfig.individualOverrides);
+
+    if (overrides.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.875rem; font-style: italic;">No overrides configured</p>';
+        return;
+    }
+
+    container.innerHTML = overrides.map(([person, config]) => `
+        <div class="override-item">
+            <div class="override-info">
+                <span class="override-name">${person}</span>
+                <span class="override-capacity">${config.capacity} projects</span>
+                ${config.reason ? `<span class="override-reason">(${config.reason})</span>` : ''}
+            </div>
+            <button class="btn-remove-override" onclick="removeCapacityOverride('${person.replace(/'/g, "\\'")}')">Remove</button>
+        </div>
+    `).join('');
+}
+
+// Calculate resource capacity for a person
+function calculateResourceCapacity(person, role) {
+    const now = new Date();
+
+    // Get all active projects for this person
+    const personProjects = filteredData.filter(p => {
+        const isLead = p['OH Project Lead'] === person;
+        const isSpecialist = p['OH Specialist(s)'] === person;
+
+        const status = p['Project Status'];
+        const isActive = status && !status.toLowerCase().includes('complete') && !status.toLowerCase().includes('closed');
+
+        return (isLead || isSpecialist) && isActive;
+    });
+
+    const currentProjects = personProjects.length;
+
+    // Determine max capacity
+    let maxCapacity;
+    if (capacityConfig.individualOverrides[person]) {
+        maxCapacity = capacityConfig.individualOverrides[person].capacity;
+    } else if (role === 'Lead') {
+        maxCapacity = capacityConfig.defaultLeadCapacity;
+    } else {
+        maxCapacity = capacityConfig.defaultSpecialistCapacity;
+    }
+
+    const utilization = maxCapacity > 0 ? (currentProjects / maxCapacity) * 100 : 0;
+    const alertThreshold = capacityConfig.alertThreshold;
+
+    // Determine status
+    let status, statusClass;
+    if (utilization >= 100) {
+        status = 'Critical';
+        statusClass = 'critical';
+    } else if (utilization >= alertThreshold) {
+        status = 'High Load';
+        statusClass = 'warning';
+    } else if (utilization >= 50) {
+        status = 'Normal';
+        statusClass = 'normal';
+    } else {
+        status = 'Available';
+        statusClass = 'available';
+    }
+
+    // Calculate next available date
+    let nextAvailable = null;
+    if (currentProjects >= maxCapacity) {
+        // Find earliest project end date
+        const endDates = personProjects.map(p => parseDateCached(p['OH Go-Live Date'], p.__id)).filter(d => d);
+        if (endDates.length > 0) {
+            nextAvailable = new Date(Math.min(...endDates));
+        }
+    }
+
+    return {
+        person,
+        role,
+        currentProjects,
+        maxCapacity,
+        utilization: Math.round(utilization),
+        status,
+        statusClass,
+        nextAvailable,
+        projects: personProjects,
+        availableCapacity: Math.max(0, maxCapacity - currentProjects)
+    };
+}
+
+// Main render function for capacity planning tab
+function renderCapacityPlanning() {
+    renderCapacityMetrics();
+    renderCapacityCards();
+    createCapacityUtilizationChart();
+}
+
+// Render capacity metrics
+function renderCapacityMetrics() {
+    const metricsGrid = document.getElementById('capacityMetricsGrid');
+    if (!metricsGrid) return;
+
+    // Calculate all resource capacities
+    const leads = [...new Set(filteredData.map(p => p['OH Project Lead']).filter(l => l))];
+    const specialists = [...new Set(filteredData.map(p => p['OH Specialist(s)']).filter(s => s))];
+
+    const leadCapacities = leads.map(lead => calculateResourceCapacity(lead, 'Lead'));
+    const specialistCapacities = specialists.map(spec => calculateResourceCapacity(spec, 'Specialist'));
+
+    const allCapacities = [...leadCapacities, ...specialistCapacities];
+
+    // Calculate metrics
+    const overallocated = allCapacities.filter(c => c.utilization >= 100).length;
+    const highLoad = allCapacities.filter(c => c.utilization >= capacityConfig.alertThreshold && c.utilization < 100).length;
+    const available = allCapacities.filter(c => c.utilization < 50).length;
+    const avgUtilization = allCapacities.length > 0
+        ? Math.round(allCapacities.reduce((sum, c) => sum + c.utilization, 0) / allCapacities.length)
+        : 0;
+
+    const metrics = [
+        { label: 'Total Resources', value: allCapacities.length, subtitle: `${leads.length} Leads, ${specialists.length} Specialists`, clickable: false },
+        { label: 'Overallocated', value: overallocated, subtitle: 'At or above 100% capacity', clickable: false, color: 'danger' },
+        { label: 'High Load', value: highLoad, subtitle: `${capacityConfig.alertThreshold}% or higher capacity`, clickable: false, color: 'warning' },
+        { label: 'Available', value: available, subtitle: 'Below 50% capacity', clickable: false, color: 'success' },
+        { label: 'Avg Utilization', value: `${avgUtilization}%`, subtitle: 'Across all resources', clickable: false }
+    ];
+
+    metricsGrid.innerHTML = metrics.map(m => `
+        <div class="metric-card ${m.clickable ? 'metric-card-clickable' : ''}">
+            <div class="metric-label">${m.label}</div>
+            <div class="metric-value" style="${m.color ? `color: var(--${m.color}-color)` : ''}">${m.value}</div>
+            <div class="metric-subtitle">${m.subtitle}</div>
+        </div>
+    `).join('');
+}
+
+// Render capacity cards
+function renderCapacityCards() {
+    const container = document.getElementById('resourceCapacityCards');
+    if (!container) return;
+
+    // Calculate all resource capacities
+    const leads = [...new Set(filteredData.map(p => p['OH Project Lead']).filter(l => l))];
+    const specialists = [...new Set(filteredData.map(p => p['OH Specialist(s)']).filter(s => s))];
+
+    const leadCapacities = leads.map(lead => calculateResourceCapacity(lead, 'Lead'));
+    const specialistCapacities = specialists.map(spec => calculateResourceCapacity(spec, 'Specialist'));
+
+    let allCapacities = [...leadCapacities, ...specialistCapacities];
+
+    // Apply filter
+    if (currentCapacityFilter === 'leads') {
+        allCapacities = leadCapacities;
+    } else if (currentCapacityFilter === 'specialists') {
+        allCapacities = specialistCapacities;
+    } else if (currentCapacityFilter === 'overallocated') {
+        allCapacities = allCapacities.filter(c => c.utilization >= capacityConfig.alertThreshold);
+    } else if (currentCapacityFilter === 'available') {
+        allCapacities = allCapacities.filter(c => c.utilization < 70);
+    }
+
+    // Sort by utilization (highest first)
+    allCapacities.sort((a, b) => b.utilization - a.utilization);
+
+    if (allCapacities.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 2rem;">No resources match the current filter</p>';
+        return;
+    }
+
+    container.innerHTML = allCapacities.map(capacity => `
+        <div class="resource-capacity-card">
+            <div class="resource-card-header">
+                <div>
+                    <div class="resource-name">${capacity.person}</div>
+                    <div class="resource-role">${capacity.role}</div>
+                </div>
+                <span class="capacity-status-badge ${capacity.statusClass}">${capacity.status}</span>
+            </div>
+            <div class="capacity-progress-bar">
+                <div class="capacity-progress-fill ${capacity.statusClass}" style="width: ${Math.min(100, capacity.utilization)}%">
+                    ${capacity.utilization}%
+                </div>
+            </div>
+            <div class="capacity-details">
+                <div class="capacity-detail-item">
+                    <span class="capacity-detail-label">Current Load</span>
+                    <span class="capacity-detail-value">${capacity.currentProjects}/${capacity.maxCapacity}</span>
+                </div>
+                <div class="capacity-detail-item">
+                    <span class="capacity-detail-label">Available</span>
+                    <span class="capacity-detail-value">${capacity.availableCapacity} projects</span>
+                </div>
+            </div>
+            ${capacity.nextAvailable ? `
+                <div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border);">
+                    <span style="font-size: 0.75rem; color: var(--text-secondary);">Next available: </span>
+                    <span style="font-size: 0.875rem; font-weight: 600; color: var(--text-primary);">${formatDate(capacity.nextAvailable)}</span>
+                </div>
+            ` : ''}
+            ${capacity.projects.length > 0 ? `
+                <div class="active-projects-list">
+                    <h4>Active Projects (${capacity.projects.length})</h4>
+                    ${capacity.projects.slice(0, 5).map(p => `
+                        <div class="project-item">${p['Project Short Name'] || p['Facility Name']}</div>
+                    `).join('')}
+                    ${capacity.projects.length > 5 ? `<div class="project-item">+ ${capacity.projects.length - 5} more...</div>` : ''}
+                </div>
+            ` : ''}
+        </div>
+    `).join('');
+}
+
+// Filter capacity view
+function filterCapacityView(filter) {
+    currentCapacityFilter = filter;
+
+    // Update button states
+    document.querySelectorAll('.capacity-filter-btn').forEach(btn => {
+        if (btn.getAttribute('data-filter') === filter) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
+    renderCapacityCards();
+}
+
+// Create capacity utilization chart
+function createCapacityUtilizationChart() {
+    destroyChart('capacityUtilizationChart');
+
+    // Calculate all resource capacities
+    const leads = [...new Set(filteredData.map(p => p['OH Project Lead']).filter(l => l))];
+    const specialists = [...new Set(filteredData.map(p => p['OH Specialist(s)']).filter(s => s))];
+
+    const allPeople = [...leads, ...specialists];
+    const capacities = allPeople.map(person => {
+        const role = leads.includes(person) ? 'Lead' : 'Specialist';
+        return calculateResourceCapacity(person, role);
+    });
+
+    // Sort by utilization
+    capacities.sort((a, b) => b.utilization - a.utilization);
+
+    // Take top 20 for readability
+    const topCapacities = capacities.slice(0, 20);
+
+    const ctx = document.getElementById('capacityUtilizationChart');
+    if (!ctx) return;
+
+    charts.capacityUtilizationChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: topCapacities.map(c => c.person),
+            datasets: [{
+                label: 'Capacity Utilization (%)',
+                data: topCapacities.map(c => c.utilization),
+                backgroundColor: topCapacities.map(c => {
+                    if (c.utilization >= 100) return 'rgba(239, 68, 68, 0.8)';
+                    if (c.utilization >= capacityConfig.alertThreshold) return 'rgba(245, 158, 11, 0.8)';
+                    if (c.utilization >= 50) return 'rgba(37, 99, 235, 0.8)';
+                    return 'rgba(16, 185, 129, 0.8)';
+                }),
+                borderColor: topCapacities.map(c => {
+                    if (c.utilization >= 100) return 'rgb(239, 68, 68)';
+                    if (c.utilization >= capacityConfig.alertThreshold) return 'rgb(245, 158, 11)';
+                    if (c.utilization >= 50) return 'rgb(37, 99, 235)';
+                    return 'rgb(16, 185, 129)';
+                }),
+                borderWidth: 2
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const capacity = topCapacities[context.dataIndex];
+                            return [
+                                `Utilization: ${capacity.utilization}%`,
+                                `Current: ${capacity.currentProjects}/${capacity.maxCapacity} projects`,
+                                `Status: ${capacity.status}`
+                            ];
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    max: 120,
+                    title: {
+                        display: true,
+                        text: 'Capacity Utilization (%)'
+                    },
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)'
+                    }
+                },
+                y: {
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
 }
