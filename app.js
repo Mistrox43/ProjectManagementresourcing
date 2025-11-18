@@ -491,6 +491,9 @@ function updateMetrics() {
     let missingTestEnd = 0;
     let missingAnyTestDate = 0;
     let testingNotRequired = 0;
+    let noLead = 0;
+    let noSpecialists = 0;
+    let multipleSpecialists = 0;
 
     const uniqueLeads = new Set();
     const uniqueSpecialists = new Set();
@@ -513,6 +516,20 @@ function updateMetrics() {
         // Unique leads and specialists
         if (p['OH Project Lead']) uniqueLeads.add(p['OH Project Lead']);
         if (p['OH Specialist(s)']) uniqueSpecialists.add(p['OH Specialist(s)']);
+
+        // Projects without lead
+        if (!p['OH Project Lead'] || p['OH Project Lead'].trim() === '') {
+            noLead++;
+        }
+
+        // Specialist assignment issues
+        const specialists = p['OH Specialist(s)'];
+        if (!specialists || specialists.trim() === '') {
+            noSpecialists++;
+        } else if (specialists.includes(',') || specialists.includes(';')) {
+            // Check for multiple specialists (separated by comma or semicolon)
+            multipleSpecialists++;
+        }
 
         // Upcoming go-lives
         if (goLiveDate && goLiveDate > now && goLiveDate <= sixtyDaysFromNow) {
@@ -578,9 +595,12 @@ function updateMetrics() {
     ];
 
     // Tab 3: Data & Operations metrics
+    const specialistIssues = noSpecialists + multipleSpecialists;
     const dataMetrics = [
         { label: 'Missing Date Data', value: missingAnyDate, subtitle: `Go-Live: ${missingGoLive}, Kick-Off: ${missingKickOff}`, clickable: true },
-        { label: 'Missing Testing Dates', value: missingAnyTestDate, subtitle: `Test Start: ${missingTestStart}, Test End: ${missingTestEnd}, Not Required: ${testingNotRequired}`, clickable: true }
+        { label: 'Missing Testing Dates', value: missingAnyTestDate, subtitle: `Test Start: ${missingTestStart}, Test End: ${missingTestEnd}, Not Required: ${testingNotRequired}`, clickable: true },
+        { label: 'Projects Without Lead', value: noLead, subtitle: 'No lead assigned', clickable: true },
+        { label: 'Specialist Assignment Issues', value: specialistIssues, subtitle: `No Specialists: ${noSpecialists}, Multiple Specialists: ${multipleSpecialists}`, clickable: true }
     ];
 
     // Populate metrics for each tab
@@ -609,13 +629,27 @@ function updateMetrics() {
     }
 
     if (metricsGridData) {
-        metricsGridData.innerHTML = dataMetrics.map(m => `
-            <div class="metric-card ${m.clickable ? 'metric-card-clickable' : ''}" ${m.clickable ? `onclick="${m.label === 'Missing Date Data' ? 'openMissingDatesPanel()' : 'openMissingTestingDatesPanel()'}"` : ''}>
-                <div class="metric-label">${m.label}</div>
-                <div class="metric-value">${m.value}</div>
-                <div class="metric-subtitle">${m.subtitle}</div>
-            </div>
-        `).join('');
+        metricsGridData.innerHTML = dataMetrics.map(m => {
+            let clickHandler = '';
+            if (m.clickable) {
+                if (m.label === 'Missing Date Data') {
+                    clickHandler = 'openMissingDatesPanel()';
+                } else if (m.label === 'Missing Testing Dates') {
+                    clickHandler = 'openMissingTestingDatesPanel()';
+                } else if (m.label === 'Projects Without Lead') {
+                    clickHandler = 'openNoLeadPanel()';
+                } else if (m.label === 'Specialist Assignment Issues') {
+                    clickHandler = 'openSpecialistIssuesPanel()';
+                }
+            }
+            return `
+                <div class="metric-card ${m.clickable ? 'metric-card-clickable' : ''}" ${m.clickable ? `onclick="${clickHandler}"` : ''}>
+                    <div class="metric-label">${m.label}</div>
+                    <div class="metric-value">${m.value}</div>
+                    <div class="metric-subtitle">${m.subtitle}</div>
+                </div>
+            `;
+        }).join('');
     }
 }
 
@@ -1885,6 +1919,38 @@ function openMissingTestingDatesPanel() {
     updateSidePanelContent();
 }
 
+// Open No Lead Panel
+function openNoLeadPanel() {
+    sidePanelState = {
+        isOpen: true,
+        chartType: 'no-lead',
+        monthIndex: 0,
+        allMonths: [],
+        chartData: null
+    };
+
+    document.getElementById('sidePanel').classList.add('open');
+    document.getElementById('sidePanelOverlay').classList.add('open');
+
+    updateSidePanelContent();
+}
+
+// Open Specialist Issues Panel
+function openSpecialistIssuesPanel() {
+    sidePanelState = {
+        isOpen: true,
+        chartType: 'specialist-issues',
+        monthIndex: 0,
+        allMonths: [],
+        chartData: null
+    };
+
+    document.getElementById('sidePanel').classList.add('open');
+    document.getElementById('sidePanelOverlay').classList.add('open');
+
+    updateSidePanelContent();
+}
+
 // Close Side Panel
 function closeSidePanel() {
     document.getElementById('sidePanel').classList.remove('open');
@@ -2122,6 +2188,191 @@ function updateSidePanelContent() {
                             </div>
                             ${testStartDate ? `<div class="date-info">Testing Start: ${formatDate(testStartDate)}</div>` : ''}
                             ${testEndDate ? `<div class="date-info">Testing End: ${formatDate(testEndDate)}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('panelProjects').innerHTML = projectsHTML;
+        }
+        return;
+    }
+
+    // Handle no-lead panel
+    if (sidePanelState.chartType === 'no-lead') {
+        document.getElementById('panelTitle').textContent = 'Projects Without Lead';
+        document.querySelector('.panel-navigation').style.display = 'none';
+
+        // Get projects without lead
+        const noLeadProjects = filteredData.filter(p =>
+            !p['OH Project Lead'] || p['OH Project Lead'].trim() === ''
+        );
+
+        // Update summary stats
+        const summaryHTML = `
+            <div class="panel-stat">
+                <div class="panel-stat-label">Projects Without Lead</div>
+                <div class="panel-stat-value">${noLeadProjects.length}</div>
+            </div>
+        `;
+        document.getElementById('panelSummary').innerHTML = summaryHTML;
+
+        // Display all projects without lead
+        if (noLeadProjects.length === 0) {
+            document.getElementById('panelProjects').innerHTML = `
+                <div class="panel-empty">
+                    <div class="panel-empty-icon">✓</div>
+                    <p>All projects have an assigned lead!</p>
+                </div>
+            `;
+        } else {
+            const projectsHTML = noLeadProjects.map(project => {
+                const facilityName = project['Facility Name'] || 'Unknown Facility';
+                const projectShortName = project['Project Short Name'] || '';
+                const specialist = project['OH Specialist(s)'] || 'Not Assigned';
+                const status = project['Project Status'] || 'Unknown';
+                const region = project['OH Region'] || 'Unknown';
+                const projectType = project['Project Type'] || 'Unknown';
+                const lob = project['LOB'] || 'Unknown';
+
+                const statusClass = getStatusClass(status);
+
+                return `
+                    <div class="project-card">
+                        <div class="project-card-header">
+                            <h4 class="project-name">${facilityName}</h4>
+                            <span class="status-badge ${statusClass}">${status}</span>
+                        </div>
+                        <div class="project-card-body">
+                            ${projectShortName ? `<div class="project-info-row">
+                                <span class="project-info-label">Project:</span>
+                                <span class="project-info-value">${projectShortName}</span>
+                            </div>` : ''}
+                            <div class="project-info-row">
+                                <span class="project-info-label">Type:</span>
+                                <span class="project-info-value">${projectType}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Region:</span>
+                                <span class="project-info-value">${region}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">LOB:</span>
+                                <span class="project-info-value">${lob}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Specialist:</span>
+                                <span class="project-info-value">${specialist}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('panelProjects').innerHTML = projectsHTML;
+        }
+        return;
+    }
+
+    // Handle specialist-issues panel
+    if (sidePanelState.chartType === 'specialist-issues') {
+        document.getElementById('panelTitle').textContent = 'Specialist Assignment Issues';
+        document.querySelector('.panel-navigation').style.display = 'none';
+
+        // Get projects with specialist issues
+        const noSpecialistsProjects = filteredData.filter(p =>
+            !p['OH Specialist(s)'] || p['OH Specialist(s)'].trim() === ''
+        );
+        const multipleSpecialistsProjects = filteredData.filter(p => {
+            const specialists = p['OH Specialist(s)'];
+            return specialists && specialists.trim() !== '' &&
+                   (specialists.includes(',') || specialists.includes(';'));
+        });
+        const allIssueProjects = [...noSpecialistsProjects, ...multipleSpecialistsProjects];
+
+        // Update summary stats
+        const summaryHTML = `
+            <div class="panel-stat">
+                <div class="panel-stat-label">Total Issues</div>
+                <div class="panel-stat-value">${allIssueProjects.length}</div>
+            </div>
+            <div class="panel-stat">
+                <div class="panel-stat-label">No Specialists</div>
+                <div class="panel-stat-value">${noSpecialistsProjects.length}</div>
+            </div>
+            <div class="panel-stat">
+                <div class="panel-stat-label">Multiple Specialists</div>
+                <div class="panel-stat-value">${multipleSpecialistsProjects.length}</div>
+            </div>
+        `;
+        document.getElementById('panelSummary').innerHTML = summaryHTML;
+
+        // Display all projects with specialist issues
+        if (allIssueProjects.length === 0) {
+            document.getElementById('panelProjects').innerHTML = `
+                <div class="panel-empty">
+                    <div class="panel-empty-icon">✓</div>
+                    <p>All projects have exactly one specialist assigned!</p>
+                </div>
+            `;
+        } else {
+            const projectsHTML = allIssueProjects.map(project => {
+                const facilityName = project['Facility Name'] || 'Unknown Facility';
+                const projectShortName = project['Project Short Name'] || '';
+                const projectLead = project['OH Project Lead'] || 'Not Assigned';
+                const specialist = project['OH Specialist(s)'] || 'Not Assigned';
+                const status = project['Project Status'] || 'Unknown';
+                const region = project['OH Region'] || 'Unknown';
+                const projectType = project['Project Type'] || 'Unknown';
+                const lob = project['LOB'] || 'Unknown';
+
+                const statusClass = getStatusClass(status);
+
+                // Determine issue type
+                let issueType = '';
+                if (!specialist || specialist.trim() === '') {
+                    issueType = 'No Specialist Assigned';
+                } else if (specialist.includes(',') || specialist.includes(';')) {
+                    issueType = 'Multiple Specialists';
+                }
+
+                return `
+                    <div class="project-card">
+                        <div class="project-card-header">
+                            <h4 class="project-name">${facilityName}</h4>
+                            <span class="status-badge ${statusClass}">${status}</span>
+                        </div>
+                        <div class="project-card-body">
+                            ${projectShortName ? `<div class="project-info-row">
+                                <span class="project-info-label">Project:</span>
+                                <span class="project-info-value">${projectShortName}</span>
+                            </div>` : ''}
+                            <div class="project-info-row">
+                                <span class="project-info-label">Type:</span>
+                                <span class="project-info-value">${projectType}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Region:</span>
+                                <span class="project-info-value">${region}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">LOB:</span>
+                                <span class="project-info-value">${lob}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Lead:</span>
+                                <span class="project-info-value">${projectLead}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Specialist(s):</span>
+                                <span class="project-info-value">${specialist}</span>
+                            </div>
+                        </div>
+                        <div class="project-missing-dates">
+                            <div class="missing-dates-label">Issue:</div>
+                            <div class="missing-dates-list">
+                                <span class="missing-date-badge">${issueType}</span>
+                            </div>
                         </div>
                     </div>
                 `;
