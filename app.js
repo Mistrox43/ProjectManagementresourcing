@@ -26,7 +26,27 @@ let capacityConfig = {
     defaultLeadCapacity: 5,
     defaultSpecialistCapacity: 8,
     alertThreshold: 80,
-    individualOverrides: {}
+    individualOverrides: {},
+    phaseWeights: {
+        lead: {
+            preKickoff30Plus: 10,      // Pre-Kickoff (>30 days)
+            preKickoff0to30: 30,        // Pre-Kickoff (0-30 days)
+            activePreTesting: 100,      // Active Pre-Testing
+            activeTesting: 80,          // Active Testing
+            activePostTesting: 60,      // Active Post-Testing
+            postGoLive0to30: 20,        // Post-Go-Live (0-30 days)
+            postGoLive30Plus: 5         // Post-Go-Live (>30 days)
+        },
+        specialist: {
+            preKickoff30Plus: 5,        // Pre-Kickoff (>30 days)
+            preKickoff0to30: 20,        // Pre-Kickoff (0-30 days)
+            activePreTesting: 70,       // Active Pre-Testing
+            activeTesting: 100,         // Active Testing
+            activePostTesting: 80,      // Active Post-Testing
+            postGoLive0to30: 30,        // Post-Go-Live (0-30 days)
+            postGoLive30Plus: 10        // Post-Go-Live (>30 days)
+        }
+    }
 };
 
 let currentCapacityFilter = 'all'; // Current capacity view filter
@@ -36,6 +56,127 @@ let parsedDateCache = new Map(); // Cache for parsed dates
 let filterDebounceTimer = null; // Debounce timer for filter changes
 let isUpdating = false; // Flag to prevent concurrent updates
 let pendingUpdate = false; // Flag to track if an update is pending
+
+// Determine project phase based on dates
+function determineProjectPhase(project) {
+    const now = new Date();
+    const thirtyDaysFromNow = new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000));
+    const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+
+    // Parse all required dates
+    const kickOffDate = parseDateCached(project['Kick-Off Date'], project.__id);
+    const testStartDate = parseDateCached(project['Testing Start'], project.__id);
+    const testEndDate = parseDateCached(project['Testing End'], project.__id);
+    const goLiveDate = parseDateCached(project['OH Go-Live Date'], project.__id);
+
+    // Check if project status is closed/complete
+    const status = project['Project Status'];
+    const isClosed = status && (status.toLowerCase().includes('complete') || status.toLowerCase().includes('closed'));
+
+    // Validate date sequence: Kick-off < Testing Start < Testing End < Go-Live
+    let dateSequenceError = null;
+    if (kickOffDate && testStartDate && kickOffDate >= testStartDate) {
+        dateSequenceError = 'Kick-off date must be before Testing Start';
+    } else if (testStartDate && testEndDate && testStartDate > testEndDate) {
+        dateSequenceError = 'Testing Start must be before Testing End';
+    } else if (testEndDate && goLiveDate && testEndDate >= goLiveDate) {
+        dateSequenceError = 'Testing End must be before Go-Live';
+    } else if (kickOffDate && goLiveDate && kickOffDate >= goLiveDate) {
+        dateSequenceError = 'Kick-off must be before Go-Live';
+    }
+
+    // If dates are invalid or project is closed, return appropriate phase
+    if (dateSequenceError) {
+        return {
+            phase: 'dateError',
+            phaseName: 'Date Sequence Error',
+            error: dateSequenceError
+        };
+    }
+
+    if (isClosed) {
+        return {
+            phase: 'closed',
+            phaseName: 'Closed/Complete',
+            error: null
+        };
+    }
+
+    // Determine phase based on date ranges
+    // Phase 1: Pre-Kickoff (>30 days)
+    if (kickOffDate && kickOffDate > thirtyDaysFromNow) {
+        return {
+            phase: 'preKickoff30Plus',
+            phaseName: 'Pre-Kickoff (>30 days)',
+            error: null
+        };
+    }
+
+    // Phase 2: Pre-Kickoff (0-30 days)
+    if (kickOffDate && kickOffDate > now && kickOffDate <= thirtyDaysFromNow) {
+        return {
+            phase: 'preKickoff0to30',
+            phaseName: 'Pre-Kickoff (0-30 days)',
+            error: null
+        };
+    }
+
+    // Phase 3: Active Pre-Testing
+    if (kickOffDate && kickOffDate <= now) {
+        if (!testStartDate || testStartDate > now) {
+            return {
+                phase: 'activePreTesting',
+                phaseName: 'Active Pre-Testing',
+                error: null
+            };
+        }
+    }
+
+    // Phase 4: Active Testing
+    if (testStartDate && testEndDate && testStartDate <= now && testEndDate >= now) {
+        return {
+            phase: 'activeTesting',
+            phaseName: 'Active Testing',
+            error: null
+        };
+    }
+
+    // Phase 5: Active Post-Testing
+    if (testEndDate && testEndDate < now) {
+        if (!goLiveDate || goLiveDate > now) {
+            return {
+                phase: 'activePostTesting',
+                phaseName: 'Active Post-Testing',
+                error: null
+            };
+        }
+    }
+
+    // Phase 6: Post-Go-Live (0-30 days)
+    if (goLiveDate && goLiveDate < now && goLiveDate >= thirtyDaysAgo) {
+        return {
+            phase: 'postGoLive0to30',
+            phaseName: 'Post-Go-Live (0-30 days)',
+            error: null
+        };
+    }
+
+    // Phase 7: Post-Go-Live (>30 days)
+    if (goLiveDate && goLiveDate < thirtyDaysAgo) {
+        return {
+            phase: 'postGoLive30Plus',
+            phaseName: 'Post-Go-Live (>30 days)',
+            error: null
+        };
+    }
+
+    // Unknown phase - missing critical dates
+    return {
+        phase: 'unknown',
+        phaseName: 'Unknown Phase',
+        error: 'Missing critical date information'
+    };
+}
 
 // Tab switching function
 function switchTab(tabName) {
@@ -2634,7 +2775,22 @@ function loadCapacityConfig() {
     const saved = localStorage.getItem('capacityConfig');
     if (saved) {
         try {
-            capacityConfig = JSON.parse(saved);
+            const savedConfig = JSON.parse(saved);
+            // Merge saved config with defaults (in case new fields were added)
+            capacityConfig = {
+                ...capacityConfig,
+                ...savedConfig,
+                phaseWeights: {
+                    lead: {
+                        ...capacityConfig.phaseWeights.lead,
+                        ...(savedConfig.phaseWeights?.lead || {})
+                    },
+                    specialist: {
+                        ...capacityConfig.phaseWeights.specialist,
+                        ...(savedConfig.phaseWeights?.specialist || {})
+                    }
+                }
+            };
         } catch (e) {
             console.error('Error loading capacity config:', e);
         }
@@ -2649,6 +2805,40 @@ function loadCapacityConfig() {
     if (specialistInput) specialistInput.value = capacityConfig.defaultSpecialistCapacity;
     if (thresholdInput) thresholdInput.value = capacityConfig.alertThreshold;
 
+    // Load phase weight inputs
+    const phaseInputs = {
+        lead: {
+            preKickoff30Plus: document.getElementById('leadPreKickoff30Plus'),
+            preKickoff0to30: document.getElementById('leadPreKickoff0to30'),
+            activePreTesting: document.getElementById('leadActivePreTesting'),
+            activeTesting: document.getElementById('leadActiveTesting'),
+            activePostTesting: document.getElementById('leadActivePostTesting'),
+            postGoLive0to30: document.getElementById('leadPostGoLive0to30'),
+            postGoLive30Plus: document.getElementById('leadPostGoLive30Plus')
+        },
+        specialist: {
+            preKickoff30Plus: document.getElementById('specialistPreKickoff30Plus'),
+            preKickoff0to30: document.getElementById('specialistPreKickoff0to30'),
+            activePreTesting: document.getElementById('specialistActivePreTesting'),
+            activeTesting: document.getElementById('specialistActiveTesting'),
+            activePostTesting: document.getElementById('specialistActivePostTesting'),
+            postGoLive0to30: document.getElementById('specialistPostGoLive0to30'),
+            postGoLive30Plus: document.getElementById('specialistPostGoLive30Plus')
+        }
+    };
+
+    Object.keys(phaseInputs.lead).forEach(phase => {
+        if (phaseInputs.lead[phase]) {
+            phaseInputs.lead[phase].value = capacityConfig.phaseWeights.lead[phase];
+        }
+    });
+
+    Object.keys(phaseInputs.specialist).forEach(phase => {
+        if (phaseInputs.specialist[phase]) {
+            phaseInputs.specialist[phase].value = capacityConfig.phaseWeights.specialist[phase];
+        }
+    });
+
     renderCapacityOverrides();
 }
 
@@ -2657,6 +2847,22 @@ function saveCapacityConfig() {
     capacityConfig.defaultLeadCapacity = parseInt(document.getElementById('defaultLeadCapacity').value);
     capacityConfig.defaultSpecialistCapacity = parseInt(document.getElementById('defaultSpecialistCapacity').value);
     capacityConfig.alertThreshold = parseInt(document.getElementById('alertThreshold').value);
+
+    // Save phase weights
+    const phaseFields = ['preKickoff30Plus', 'preKickoff0to30', 'activePreTesting', 'activeTesting',
+                         'activePostTesting', 'postGoLive0to30', 'postGoLive30Plus'];
+
+    phaseFields.forEach(phase => {
+        const leadInput = document.getElementById(`lead${phase.charAt(0).toUpperCase() + phase.slice(1)}`);
+        const specialistInput = document.getElementById(`specialist${phase.charAt(0).toUpperCase() + phase.slice(1)}`);
+
+        if (leadInput) {
+            capacityConfig.phaseWeights.lead[phase] = parseInt(leadInput.value) || 0;
+        }
+        if (specialistInput) {
+            capacityConfig.phaseWeights.specialist[phase] = parseInt(specialistInput.value) || 0;
+        }
+    });
 
     localStorage.setItem('capacityConfig', JSON.stringify(capacityConfig));
 
