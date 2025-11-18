@@ -54,6 +54,44 @@
                 </button>
             </div>
 
+            <!-- Filters (Available on All Tabs) -->
+            <div class="filters-section-compact">
+                <div class="filter-header">
+                    <h3 class="filter-title">Filters</h3>
+                    <div class="filter-actions">
+                        <div class="filter-dropdown-wrapper">
+                            <button class="btn-add-filter" onclick="toggleFilterDropdown()">+ Add Filter</button>
+                            <div class="filter-dropdown" id="filterDropdown">
+                                <div class="filter-dropdown-section">
+                                    <label class="filter-dropdown-label">Region</label>
+                                    <div id="regionFilterOptions" class="filter-options"></div>
+                                </div>
+                                <div class="filter-dropdown-section">
+                                    <label class="filter-dropdown-label">Project Status</label>
+                                    <div id="statusFilterOptions" class="filter-options"></div>
+                                </div>
+                                <div class="filter-dropdown-section">
+                                    <label class="filter-dropdown-label">Project Type</label>
+                                    <div id="typeFilterOptions" class="filter-options"></div>
+                                </div>
+                                <div class="filter-dropdown-section">
+                                    <label class="filter-dropdown-label">LOB</label>
+                                    <div id="lobFilterOptions" class="filter-options"></div>
+                                </div>
+                                <div class="filter-dropdown-section">
+                                    <label class="filter-dropdown-label">Project Lead</label>
+                                    <div id="leadFilterOptions" class="filter-options"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <button class="btn-clear-compact" onclick="clearFilters()">Clear All</button>
+                    </div>
+                </div>
+                <div class="active-filters" id="activeFilters">
+                    <span class="no-filters-msg">No filters applied</span>
+                </div>
+            </div>
+
             <!-- Tab: Current Status -->
             <div class="tab-content active" id="tab-current-status">
                 <!-- Current Status Metrics -->
@@ -247,44 +285,6 @@
                 <!-- Data Quality Metrics -->
                 <div class="metrics-grid" id="metricsGridData">
                     <!-- Metrics will be dynamically generated -->
-                </div>
-
-                <!-- Filters -->
-                <div class="filters-section-compact">
-                    <div class="filter-header">
-                        <h3 class="filter-title">Filters</h3>
-                        <div class="filter-actions">
-                            <div class="filter-dropdown-wrapper">
-                                <button class="btn-add-filter" onclick="toggleFilterDropdown()">+ Add Filter</button>
-                                <div class="filter-dropdown" id="filterDropdown">
-                                    <div class="filter-dropdown-section">
-                                        <label class="filter-dropdown-label">Region</label>
-                                        <div id="regionFilterOptions" class="filter-options"></div>
-                                    </div>
-                                    <div class="filter-dropdown-section">
-                                        <label class="filter-dropdown-label">Project Status</label>
-                                        <div id="statusFilterOptions" class="filter-options"></div>
-                                    </div>
-                                    <div class="filter-dropdown-section">
-                                        <label class="filter-dropdown-label">Project Type</label>
-                                        <div id="typeFilterOptions" class="filter-options"></div>
-                                    </div>
-                                    <div class="filter-dropdown-section">
-                                        <label class="filter-dropdown-label">LOB</label>
-                                        <div id="lobFilterOptions" class="filter-options"></div>
-                                    </div>
-                                    <div class="filter-dropdown-section">
-                                        <label class="filter-dropdown-label">Project Lead</label>
-                                        <div id="leadFilterOptions" class="filter-options"></div>
-                                    </div>
-                                </div>
-                            </div>
-                            <button class="btn-clear-compact" onclick="clearFilters()">Clear All</button>
-                        </div>
-                    </div>
-                    <div class="active-filters" id="activeFilters">
-                        <span class="no-filters-msg">No filters applied</span>
-                    </div>
                 </div>
 
                 <!-- Data Table -->
