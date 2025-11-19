@@ -3503,7 +3503,7 @@ function renderCapacityCards() {
                 ${capacity.projects.length > 0 ? `
                     <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); text-align: center;">
                         <button class="btn-view-projects" onclick="openPersonProjectsPanel('${capacity.person.replace(/'/g, "\\'")}', '${capacity.role}', ${JSON.stringify(capacity.projects.map(p => p.__id))})">
-                            View Active Projects (${capacity.projects.length})
+                            View Active Projects (${capacity.totalProjects})
                         </button>
                     </div>
                 ` : ''}
