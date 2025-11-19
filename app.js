@@ -638,6 +638,7 @@ function updateMetrics() {
     let noSpecialists = 0;
     let multipleSpecialists = 0;
     let dateSequenceErrors = 0;
+    let postGoLive30PlusNonComplete = 0;
 
     const uniqueLeads = new Set();
     const uniqueSpecialists = new Set();
@@ -661,6 +662,13 @@ function updateMetrics() {
         const status = p['Project Status'];
         if (status && !status.toLowerCase().includes('complete') && !status.toLowerCase().includes('closed')) {
             activeProjects++;
+        }
+
+        // Post-Go-Live (>30 days) with non-complete status
+        if (phaseInfo.phase === 'postGoLive30Plus') {
+            if (status && !status.toLowerCase().includes('complete')) {
+                postGoLive30PlusNonComplete++;
+            }
         }
 
         // Unique leads and specialists
@@ -751,7 +759,8 @@ function updateMetrics() {
         { label: 'Missing Testing Dates', value: missingAnyTestDate, subtitle: `Test Start: ${missingTestStart}, Test End: ${missingTestEnd}, Not Required: ${testingNotRequired}`, clickable: true },
         { label: 'Date Sequence Errors', value: dateSequenceErrors, subtitle: 'Invalid date order', clickable: true },
         { label: 'Projects Without Lead', value: noLead, subtitle: 'No lead assigned', clickable: true },
-        { label: 'Specialist Assignment Issues', value: specialistIssues, subtitle: `No Specialists: ${noSpecialists}, Multiple Specialists: ${multipleSpecialists}`, clickable: true }
+        { label: 'Specialist Assignment Issues', value: specialistIssues, subtitle: `No Specialists: ${noSpecialists}, Multiple Specialists: ${multipleSpecialists}`, clickable: true },
+        { label: 'Post-Go-Live >30 Days (Not Complete)', value: postGoLive30PlusNonComplete, subtitle: 'Still active after 30+ days', clickable: true }
     ];
 
     // Populate metrics for each tab
@@ -793,6 +802,8 @@ function updateMetrics() {
                     clickHandler = 'openNoLeadPanel()';
                 } else if (m.label === 'Specialist Assignment Issues') {
                     clickHandler = 'openSpecialistIssuesPanel()';
+                } else if (m.label === 'Post-Go-Live >30 Days (Not Complete)') {
+                    clickHandler = 'openPostGoLive30PlusPanel()';
                 }
             }
             return `
@@ -2163,6 +2174,22 @@ function openDateSequenceErrorsPanel() {
     updateSidePanelContent();
 }
 
+// Open Post-Go-Live >30 Days Panel
+function openPostGoLive30PlusPanel() {
+    sidePanelState = {
+        isOpen: true,
+        chartType: 'post-golive-30plus',
+        monthIndex: 0,
+        allMonths: [],
+        chartData: null
+    };
+
+    document.getElementById('sidePanel').classList.add('open');
+    document.getElementById('sidePanelOverlay').classList.add('open');
+
+    updateSidePanelContent();
+}
+
 // Close Side Panel
 function closeSidePanel() {
     document.getElementById('sidePanel').classList.remove('open');
@@ -2687,6 +2714,107 @@ function updateSidePanelContent() {
                                 ${testStartDate ? `<div>Testing Start: ${formatDate(testStartDate)}</div>` : '<div>Testing Start: Missing</div>'}
                                 ${testEndDate ? `<div>Testing End: ${formatDate(testEndDate)}</div>` : '<div>Testing End: Missing</div>'}
                                 ${goLiveDate ? `<div>Go-Live: ${formatDate(goLiveDate)}</div>` : '<div>Go-Live: Missing</div>'}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('panelProjects').innerHTML = projectsHTML;
+        }
+        return;
+    }
+
+    // Handle post-golive-30plus panel
+    if (sidePanelState.chartType === 'post-golive-30plus') {
+        document.getElementById('panelTitle').textContent = 'Post-Go-Live >30 Days (Not Complete)';
+        document.querySelector('.panel-navigation').style.display = 'none';
+
+        // Get projects that are >30 days post-go-live with non-complete status
+        const postGoLive30PlusProjects = filteredData.filter(p => {
+            const phaseInfo = determineProjectPhase(p);
+            if (phaseInfo.phase !== 'postGoLive30Plus') return false;
+
+            const status = p['Project Status'];
+            return status && !status.toLowerCase().includes('complete');
+        });
+
+        // Update summary stats
+        const summaryHTML = `
+            <div class="panel-stat">
+                <div class="panel-stat-label">Total Projects</div>
+                <div class="panel-stat-value">${postGoLive30PlusProjects.length}</div>
+            </div>
+        `;
+        document.getElementById('panelSummary').innerHTML = summaryHTML;
+
+        // Display all projects
+        if (postGoLive30PlusProjects.length === 0) {
+            document.getElementById('panelProjects').innerHTML = `
+                <div class="panel-empty">
+                    <div class="panel-empty-icon">✓</div>
+                    <p>No projects are >30 days post-go-live with incomplete status!</p>
+                </div>
+            `;
+        } else {
+            const projectsHTML = postGoLive30PlusProjects.map(project => {
+                const facilityName = project['Facility Name'] || 'Unknown Facility';
+                const projectShortName = project['Project Short Name'] || '';
+                const projectLead = project['OH Project Lead'] || 'Not Assigned';
+                const specialist = project['OH Specialist(s)'] || 'Not Assigned';
+                const status = project['Project Status'] || 'Unknown';
+                const region = project['OH Region'] || 'Unknown';
+                const projectType = project['Project Type'] || 'Unknown';
+                const lob = project['LOB'] || 'Unknown';
+
+                const goLiveDate = parseDateCached(project['OH Go-Live Date'], project.__id);
+                const statusClass = getStatusClass(status);
+
+                // Calculate days since go-live
+                const now = new Date();
+                const daysSinceGoLive = goLiveDate ? Math.floor((now - goLiveDate) / (1000 * 60 * 60 * 24)) : 0;
+
+                return `
+                    <div class="project-card">
+                        <div class="project-card-header">
+                            <h4 class="project-name">${facilityName}</h4>
+                            <span class="status-badge ${statusClass}">${status}</span>
+                        </div>
+                        <div class="project-card-body">
+                            ${projectShortName ? `<div class="project-info-row">
+                                <span class="project-info-label">Project:</span>
+                                <span class="project-info-value">${projectShortName}</span>
+                            </div>` : ''}
+                            <div class="project-info-row">
+                                <span class="project-info-label">Type:</span>
+                                <span class="project-info-value">${projectType}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Region:</span>
+                                <span class="project-info-value">${region}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">LOB:</span>
+                                <span class="project-info-value">${lob}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Lead:</span>
+                                <span class="project-info-value">${projectLead}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Specialist:</span>
+                                <span class="project-info-value">${specialist}</span>
+                            </div>
+                        </div>
+                        <div class="project-missing-dates">
+                            <div class="missing-dates-label">Go-Live Information:</div>
+                            <div style="margin-top: 0.5rem; font-size: 0.875rem; color: var(--text-secondary);">
+                                ${goLiveDate ? `
+                                    <div>Go-Live Date: ${formatDate(goLiveDate)}</div>
+                                    <div style="margin-top: 0.25rem; color: var(--warning-color); font-weight: 500;">
+                                        ${daysSinceGoLive} days since go-live
+                                    </div>
+                                ` : '<div>Go-Live: Missing</div>'}
                             </div>
                         </div>
                     </div>
