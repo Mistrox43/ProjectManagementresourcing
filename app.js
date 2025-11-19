@@ -50,6 +50,7 @@ let capacityConfig = {
 };
 
 let currentCapacityFilter = 'all'; // Current capacity view filter
+let expandedCapacityCards = new Set(); // Track which capacity cards are expanded
 
 // Performance optimization variables
 let parsedDateCache = new Map(); // Cache for parsed dates
@@ -2697,6 +2698,143 @@ function updateSidePanelContent() {
         return;
     }
 
+    // Handle person projects panel
+    if (sidePanelState.chartType === 'person-projects') {
+        const { person, role, projects } = sidePanelState;
+        document.getElementById('panelTitle').textContent = `${person}'s Active Projects`;
+        document.querySelector('.panel-navigation').style.display = 'none';
+
+        // Calculate phase breakdown
+        const phaseBreakdown = {
+            preKickoff30Plus: 0, preKickoff0to30: 0, activePreTesting: 0,
+            activeTesting: 0, activePostTesting: 0, postGoLive0to30: 0,
+            postGoLive30Plus: 0, unknown: 0, dateError: 0, closed: 0
+        };
+
+        projects.forEach(project => {
+            const phaseInfo = determineProjectPhase(project);
+            if (phaseBreakdown[phaseInfo.phase] !== undefined) {
+                phaseBreakdown[phaseInfo.phase]++;
+            }
+        });
+
+        // Filter out closed projects for the display
+        const activeProjectsList = projects.filter(p => {
+            const phaseInfo = determineProjectPhase(p);
+            return phaseInfo.phase !== 'closed';
+        });
+
+        // Update summary stats
+        const summaryHTML = `
+            <div class="panel-stat">
+                <div class="panel-stat-label">Total Active Projects</div>
+                <div class="panel-stat-value">${activeProjectsList.length}</div>
+            </div>
+            <div class="panel-stat">
+                <div class="panel-stat-label">Role</div>
+                <div class="panel-stat-value">${role}</div>
+            </div>
+            ${phaseBreakdown.preKickoff30Plus + phaseBreakdown.preKickoff0to30 > 0 ? `
+                <div class="panel-stat">
+                    <div class="panel-stat-label">Pre-Kickoff</div>
+                    <div class="panel-stat-value">${phaseBreakdown.preKickoff30Plus + phaseBreakdown.preKickoff0to30}</div>
+                </div>
+            ` : ''}
+            ${phaseBreakdown.activePreTesting + phaseBreakdown.activeTesting + phaseBreakdown.activePostTesting > 0 ? `
+                <div class="panel-stat">
+                    <div class="panel-stat-label">Active Phase</div>
+                    <div class="panel-stat-value">${phaseBreakdown.activePreTesting + phaseBreakdown.activeTesting + phaseBreakdown.activePostTesting}</div>
+                </div>
+            ` : ''}
+            ${phaseBreakdown.postGoLive0to30 + phaseBreakdown.postGoLive30Plus > 0 ? `
+                <div class="panel-stat">
+                    <div class="panel-stat-label">Post-Go-Live</div>
+                    <div class="panel-stat-value">${phaseBreakdown.postGoLive0to30 + phaseBreakdown.postGoLive30Plus}</div>
+                </div>
+            ` : ''}
+        `;
+        document.getElementById('panelSummary').innerHTML = summaryHTML;
+
+        // Display all active projects
+        if (activeProjectsList.length === 0) {
+            document.getElementById('panelProjects').innerHTML = `
+                <div class="panel-empty">
+                    <div class="panel-empty-icon">✓</div>
+                    <p>No active projects found for ${person}</p>
+                </div>
+            `;
+        } else {
+            const projectsHTML = activeProjectsList.map(project => {
+                const facilityName = project['Facility Name'] || 'Unknown Facility';
+                const projectShortName = project['Project Short Name'] || '';
+                const projectLead = project['OH Project Lead'] || 'Not Assigned';
+                const specialist = project['OH Specialist(s)'] || 'Not Assigned';
+                const status = project['Project Status'] || 'Unknown';
+                const region = project['OH Region'] || 'Unknown';
+                const projectType = project['Project Type'] || 'Unknown';
+                const lob = project['LOB'] || 'Unknown';
+
+                const kickOffDate = parseDateCached(project['Kick-Off Date'], project.__id);
+                const testStartDate = parseDateCached(project['Testing Start'], project.__id);
+                const testEndDate = parseDateCached(project['Testing End'], project.__id);
+                const goLiveDate = parseDateCached(project['OH Go-Live Date'], project.__id);
+
+                const statusClass = getStatusClass(status);
+
+                // Get phase info
+                const phaseInfo = determineProjectPhase(project);
+
+                return `
+                    <div class="project-card">
+                        <div class="project-card-header">
+                            <h4 class="project-name">${facilityName}</h4>
+                            <span class="status-badge ${statusClass}">${status}</span>
+                        </div>
+                        <div class="project-card-body">
+                            ${projectShortName ? `<div class="project-info-row">
+                                <span class="project-info-label">Project:</span>
+                                <span class="project-info-value">${projectShortName}</span>
+                            </div>` : ''}
+                            <div class="project-info-row">
+                                <span class="project-info-label">Type:</span>
+                                <span class="project-info-value">${projectType}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Region:</span>
+                                <span class="project-info-value">${region}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">LOB:</span>
+                                <span class="project-info-value">${lob}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Lead:</span>
+                                <span class="project-info-value">${projectLead}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Specialist:</span>
+                                <span class="project-info-value">${specialist}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Phase:</span>
+                                <span class="project-info-value" style="font-weight: 600; color: ${phaseInfo.phase === 'unknown' || phaseInfo.phase === 'dateError' ? 'var(--warning-color)' : 'var(--primary-color)'};">${phaseInfo.phaseName}</span>
+                            </div>
+                        </div>
+                        <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); font-size: 0.875rem;">
+                            ${kickOffDate ? `<div style="margin-bottom: 0.25rem;">Kick-Off: <strong>${formatDate(kickOffDate)}</strong></div>` : ''}
+                            ${testStartDate ? `<div style="margin-bottom: 0.25rem;">Testing Start: <strong>${formatDate(testStartDate)}</strong></div>` : ''}
+                            ${testEndDate ? `<div style="margin-bottom: 0.25rem;">Testing End: <strong>${formatDate(testEndDate)}</strong></div>` : ''}
+                            ${goLiveDate ? `<div>Go-Live: <strong>${formatDate(goLiveDate)}</strong></div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('panelProjects').innerHTML = projectsHTML;
+        }
+        return;
+    }
+
     // Handle timeline panels
     document.querySelector('.panel-navigation').style.display = 'flex';
 
@@ -3306,14 +3444,21 @@ function renderCapacityCards() {
         return;
     }
 
-    container.innerHTML = allCapacities.map(capacity => `
-        <div class="resource-capacity-card">
-            <div class="resource-card-header">
+    container.innerHTML = allCapacities.map(capacity => {
+        const cardId = `${capacity.person}-${capacity.role}`.replace(/\s+/g, '-');
+        const isExpanded = expandedCapacityCards.has(cardId);
+
+        return `
+        <div class="resource-capacity-card ${isExpanded ? 'expanded' : ''}" data-card-id="${cardId}">
+            <div class="resource-card-header" onclick="toggleCapacityCard('${cardId}')">
                 <div>
                     <div class="resource-name">${capacity.person}</div>
                     <div class="resource-role">${capacity.role}</div>
                 </div>
-                <span class="capacity-status-badge ${capacity.statusClass}">${capacity.status}</span>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <span class="capacity-status-badge ${capacity.statusClass}">${capacity.status}</span>
+                    <span class="expand-icon">${isExpanded ? '▼' : '▶'}</span>
+                </div>
             </div>
             <div class="capacity-progress-bar">
                 <div class="capacity-progress-fill ${capacity.statusClass}" style="width: ${Math.min(100, capacity.utilization)}%">
@@ -3330,41 +3475,69 @@ function renderCapacityCards() {
                     <span class="capacity-detail-value">${capacity.totalProjects}</span>
                 </div>
             </div>
-            ${capacity.phaseCounts && (capacity.phaseCounts.preKickoff30Plus > 0 || capacity.phaseCounts.preKickoff0to30 > 0 ||
-               capacity.phaseCounts.activePreTesting > 0 || capacity.phaseCounts.activeTesting > 0 ||
-               capacity.phaseCounts.activePostTesting > 0 || capacity.phaseCounts.postGoLive0to30 > 0 ||
-               capacity.phaseCounts.postGoLive30Plus > 0 || capacity.phaseCounts.unknown > 0) ? `
-                <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
-                    <h4 style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px;">Phase Breakdown:</h4>
-                    <div style="display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem;">
-                        ${capacity.phaseCounts.preKickoff30Plus > 0 ? `<div style="color: var(--text-primary);">• Pre-Kickoff (>30d): <strong>${capacity.phaseCounts.preKickoff30Plus}</strong> (${Math.round(capacity.phaseCounts.preKickoff30Plus * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.preKickoff30Plus : capacityConfig.phaseWeights.specialist.preKickoff30Plus) / 100 * 10) / 10})</div>` : ''}
-                        ${capacity.phaseCounts.preKickoff0to30 > 0 ? `<div style="color: var(--text-primary);">• Pre-Kickoff (0-30d): <strong>${capacity.phaseCounts.preKickoff0to30}</strong> (${Math.round(capacity.phaseCounts.preKickoff0to30 * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.preKickoff0to30 : capacityConfig.phaseWeights.specialist.preKickoff0to30) / 100 * 10) / 10})</div>` : ''}
-                        ${capacity.phaseCounts.activePreTesting > 0 ? `<div style="color: var(--text-primary);">• Active Pre-Testing: <strong>${capacity.phaseCounts.activePreTesting}</strong> (${Math.round(capacity.phaseCounts.activePreTesting * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.activePreTesting : capacityConfig.phaseWeights.specialist.activePreTesting) / 100 * 10) / 10})</div>` : ''}
-                        ${capacity.phaseCounts.activeTesting > 0 ? `<div style="color: var(--text-primary);">• Active Testing: <strong>${capacity.phaseCounts.activeTesting}</strong> (${Math.round(capacity.phaseCounts.activeTesting * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.activeTesting : capacityConfig.phaseWeights.specialist.activeTesting) / 100 * 10) / 10})</div>` : ''}
-                        ${capacity.phaseCounts.activePostTesting > 0 ? `<div style="color: var(--text-primary);">• Active Post-Testing: <strong>${capacity.phaseCounts.activePostTesting}</strong> (${Math.round(capacity.phaseCounts.activePostTesting * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.activePostTesting : capacityConfig.phaseWeights.specialist.activePostTesting) / 100 * 10) / 10})</div>` : ''}
-                        ${capacity.phaseCounts.postGoLive0to30 > 0 ? `<div style="color: var(--text-primary);">• Post-Go-Live (0-30d): <strong>${capacity.phaseCounts.postGoLive0to30}</strong> (${Math.round(capacity.phaseCounts.postGoLive0to30 * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.postGoLive0to30 : capacityConfig.phaseWeights.specialist.postGoLive0to30) / 100 * 10) / 10})</div>` : ''}
-                        ${capacity.phaseCounts.postGoLive30Plus > 0 ? `<div style="color: var(--text-primary);">• Post-Go-Live (>30d): <strong>${capacity.phaseCounts.postGoLive30Plus}</strong> (${Math.round(capacity.phaseCounts.postGoLive30Plus * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.postGoLive30Plus : capacityConfig.phaseWeights.specialist.postGoLive30Plus) / 100 * 10) / 10})</div>` : ''}
-                        ${capacity.phaseCounts.unknown > 0 ? `<div style="color: var(--warning-color);">• Unknown Phase: <strong>${capacity.phaseCounts.unknown}</strong></div>` : ''}
-                    </div>
-                </div>
-            ` : ''}
             ${capacity.nextAvailable ? `
                 <div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border);">
                     <span style="font-size: 0.75rem; color: var(--text-secondary);">Next available: </span>
                     <span style="font-size: 0.875rem; font-weight: 600; color: var(--text-primary);">${formatDate(capacity.nextAvailable)}</span>
                 </div>
             ` : ''}
-            ${capacity.projects.length > 0 ? `
-                <div class="active-projects-list">
-                    <h4>Active Projects (${capacity.projects.length})</h4>
-                    ${capacity.projects.slice(0, 5).map(p => `
-                        <div class="project-item">${p['Project Short Name'] || p['Facility Name']}</div>
-                    `).join('')}
-                    ${capacity.projects.length > 5 ? `<div class="project-item">+ ${capacity.projects.length - 5} more...</div>` : ''}
-                </div>
-            ` : ''}
+            <div class="capacity-expandable-section" style="display: ${isExpanded ? 'block' : 'none'};">
+                ${capacity.phaseCounts && (capacity.phaseCounts.preKickoff30Plus > 0 || capacity.phaseCounts.preKickoff0to30 > 0 ||
+                   capacity.phaseCounts.activePreTesting > 0 || capacity.phaseCounts.activeTesting > 0 ||
+                   capacity.phaseCounts.activePostTesting > 0 || capacity.phaseCounts.postGoLive0to30 > 0 ||
+                   capacity.phaseCounts.postGoLive30Plus > 0 || capacity.phaseCounts.unknown > 0) ? `
+                    <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                        <h4 style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px;">Phase Breakdown:</h4>
+                        <div style="display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem;">
+                            ${capacity.phaseCounts.preKickoff30Plus > 0 ? `<div style="color: var(--text-primary);">• Pre-Kickoff (>30d): <strong>${capacity.phaseCounts.preKickoff30Plus}</strong> (${Math.round(capacity.phaseCounts.preKickoff30Plus * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.preKickoff30Plus : capacityConfig.phaseWeights.specialist.preKickoff30Plus) / 100 * 10) / 10})</div>` : ''}
+                            ${capacity.phaseCounts.preKickoff0to30 > 0 ? `<div style="color: var(--text-primary);">• Pre-Kickoff (0-30d): <strong>${capacity.phaseCounts.preKickoff0to30}</strong> (${Math.round(capacity.phaseCounts.preKickoff0to30 * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.preKickoff0to30 : capacityConfig.phaseWeights.specialist.preKickoff0to30) / 100 * 10) / 10})</div>` : ''}
+                            ${capacity.phaseCounts.activePreTesting > 0 ? `<div style="color: var(--text-primary);">• Active Pre-Testing: <strong>${capacity.phaseCounts.activePreTesting}</strong> (${Math.round(capacity.phaseCounts.activePreTesting * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.activePreTesting : capacityConfig.phaseWeights.specialist.activePreTesting) / 100 * 10) / 10})</div>` : ''}
+                            ${capacity.phaseCounts.activeTesting > 0 ? `<div style="color: var(--text-primary);">• Active Testing: <strong>${capacity.phaseCounts.activeTesting}</strong> (${Math.round(capacity.phaseCounts.activeTesting * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.activeTesting : capacityConfig.phaseWeights.specialist.activeTesting) / 100 * 10) / 10})</div>` : ''}
+                            ${capacity.phaseCounts.activePostTesting > 0 ? `<div style="color: var(--text-primary);">• Active Post-Testing: <strong>${capacity.phaseCounts.activePostTesting}</strong> (${Math.round(capacity.phaseCounts.activePostTesting * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.activePostTesting : capacityConfig.phaseWeights.specialist.activePostTesting) / 100 * 10) / 10})</div>` : ''}
+                            ${capacity.phaseCounts.postGoLive0to30 > 0 ? `<div style="color: var(--text-primary);">• Post-Go-Live (0-30d): <strong>${capacity.phaseCounts.postGoLive0to30}</strong> (${Math.round(capacity.phaseCounts.postGoLive0to30 * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.postGoLive0to30 : capacityConfig.phaseWeights.specialist.postGoLive0to30) / 100 * 10) / 10})</div>` : ''}
+                            ${capacity.phaseCounts.postGoLive30Plus > 0 ? `<div style="color: var(--text-primary);">• Post-Go-Live (>30d): <strong>${capacity.phaseCounts.postGoLive30Plus}</strong> (${Math.round(capacity.phaseCounts.postGoLive30Plus * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.postGoLive30Plus : capacityConfig.phaseWeights.specialist.postGoLive30Plus) / 100 * 10) / 10})</div>` : ''}
+                            ${capacity.phaseCounts.unknown > 0 ? `<div style="color: var(--warning-color);">• Unknown Phase: <strong>${capacity.phaseCounts.unknown}</strong></div>` : ''}
+                        </div>
+                    </div>
+                ` : ''}
+                ${capacity.projects.length > 0 ? `
+                    <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); text-align: center;">
+                        <button class="btn-view-projects" onclick="openPersonProjectsPanel('${capacity.person.replace(/'/g, "\\'")}', '${capacity.role}', ${JSON.stringify(capacity.projects.map(p => p.__id))})">
+                            View Active Projects (${capacity.projects.length})
+                        </button>
+                    </div>
+                ` : ''}
+            </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
+}
+
+// Toggle capacity card expansion
+function toggleCapacityCard(cardId) {
+    if (expandedCapacityCards.has(cardId)) {
+        expandedCapacityCards.delete(cardId);
+    } else {
+        expandedCapacityCards.add(cardId);
+    }
+    renderCapacityCards();
+}
+
+// Open side panel to show person's active projects
+function openPersonProjectsPanel(person, role, projectIds) {
+    // Find the actual project objects from the IDs
+    const projects = filteredData.filter(p => projectIds.includes(p.__id));
+
+    sidePanelState = {
+        isOpen: true,
+        chartType: 'person-projects',
+        person: person,
+        role: role,
+        projects: projects
+    };
+
+    document.getElementById('sidePanel').classList.add('open');
+    updateSidePanelContent();
 }
 
 // Filter capacity view
