@@ -615,6 +615,14 @@ function toggleFilterOption(filterType, value) {
         activeFilters[filterType].splice(index, 1);
     }
 
+    // Update only the specific checkbox to keep dropdown open for multi-select
+    // (Full dropdown refresh happens in removeFilterTag for periodic sync)
+    const checkboxId = `${filterType}-${value.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const checkbox = document.getElementById(checkboxId);
+    if (checkbox) {
+        checkbox.checked = activeFilters[filterType].includes(value);
+    }
+
     updateActiveFiltersDisplay();
     applyFilters();
 }
@@ -1932,7 +1940,7 @@ function applyFilters() {
         } finally {
             hideLoading();
         }
-    }, 300); // 300ms debounce delay
+    }, 100); // 100ms debounce delay - reduced for better responsiveness
 }
 
 // Clear all filters - OPTIMIZED: Async with loading indicator
