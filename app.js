@@ -10,7 +10,8 @@ let activeFilters = {
     status: [],
     type: [],
     lob: [],
-    lead: []
+    lead: [],
+    specialist: []
 };
 
 let filterOptions = {
@@ -18,7 +19,8 @@ let filterOptions = {
     status: [],
     type: [],
     lob: [],
-    lead: []
+    lead: [],
+    specialist: []
 };
 
 // Capacity Planning configuration
@@ -481,17 +483,27 @@ function populateFilters() {
     const lobs = [...new Set(projectData.map(p => p['LOB']).filter(l => l))].sort();
     const leads = [...new Set(projectData.map(p => p['OH Project Lead']).filter(l => l))].sort();
 
+    // Get all unique specialists from all projects
+    const specialistSet = new Set();
+    projectData.forEach(p => {
+        const allSpecialists = getAllSpecialistsFromField(p['OH Specialist(s)']);
+        allSpecialists.forEach(s => specialistSet.add(s));
+    });
+    const specialists = [...specialistSet].sort();
+
     filterOptions.region = regions;
     filterOptions.status = statuses;
     filterOptions.type = types;
     filterOptions.lob = lobs;
     filterOptions.lead = leads;
+    filterOptions.specialist = specialists;
 
     populateFilterDropdown('regionFilterOptions', 'region', regions);
     populateFilterDropdown('statusFilterOptions', 'status', statuses);
     populateFilterDropdown('typeFilterOptions', 'type', types);
     populateFilterDropdown('lobFilterOptions', 'lob', lobs);
     populateFilterDropdown('leadFilterOptions', 'lead', leads);
+    populateFilterDropdown('specialistFilterOptions', 'specialist', specialists);
 
     updateActiveFiltersDisplay();
 }
@@ -631,7 +643,8 @@ function updateActiveFiltersDisplay() {
         status: 'Status',
         type: 'Type',
         lob: 'LOB',
-        lead: 'Lead'
+        lead: 'Lead',
+        specialist: 'Specialist'
     };
 
     Object.keys(activeFilters).forEach(filterType => {
@@ -1903,7 +1916,12 @@ function applyFilters() {
                 const lobMatch = activeFilters.lob.length === 0 || activeFilters.lob.includes(project['LOB']);
                 const leadMatch = activeFilters.lead.length === 0 || activeFilters.lead.includes(project['OH Project Lead']);
 
-                return regionMatch && statusMatch && typeMatch && lobMatch && leadMatch;
+                // For specialist filter, check if the assigned specialist (last in list) matches
+                const assignedSpecialist = getAssignedSpecialist(project['OH Specialist(s)']);
+                const specialistMatch = activeFilters.specialist.length === 0 ||
+                                       (assignedSpecialist && activeFilters.specialist.includes(assignedSpecialist));
+
+                return regionMatch && statusMatch && typeMatch && lobMatch && leadMatch && specialistMatch;
             });
 
             // Update UI components
@@ -1928,6 +1946,7 @@ function clearFilters() {
         activeFilters.type = [];
         activeFilters.lob = [];
         activeFilters.lead = [];
+        activeFilters.specialist = [];
 
         // Update dropdown checkboxes
         populateFilterDropdown('regionFilterOptions', 'region', filterOptions.region);
@@ -1935,6 +1954,7 @@ function clearFilters() {
         populateFilterDropdown('typeFilterOptions', 'type', filterOptions.type);
         populateFilterDropdown('lobFilterOptions', 'lob', filterOptions.lob);
         populateFilterDropdown('leadFilterOptions', 'lead', filterOptions.lead);
+        populateFilterDropdown('specialistFilterOptions', 'specialist', filterOptions.specialist);
 
         document.getElementById('searchBox').value = '';
 
