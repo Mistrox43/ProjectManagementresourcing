@@ -3009,33 +3009,33 @@ function updateSidePanelContent() {
                 const facilityName = project['Facility Name'] || 'Unknown Facility';
                 const projectShortName = project['Project Short Name'] || '';
                 const projectType = project['Project Type'] || 'N/A';
-                const region = project['Facility Region'] || 'N/A';
-                const lob = project['Facility LOB'] || 'N/A';
-                const lead = project['OH Project Lead'] || 'No Lead';
-                const specialist = project['OH Specialist(s)'] || 'No Specialist';
-                const status = project['Project Status'] || 'N/A';
-                const goLiveDate = parseDateCached(project['OH Go-Live Date'], project.__id);
+                const region = project['OH Region'] || 'Unknown';
+                const lob = project['LOB'] || 'Unknown';
+                const projectLead = project['OH Project Lead'] || 'Not Assigned';
+                const specialist = project['OH Specialist(s)'] || 'Not Assigned';
+                const status = project['Project Status'] || 'Unknown';
+
                 const kickOffDate = parseDateCached(project['Kick-Off Date'], project.__id);
+                const testStartDate = parseDateCached(project['Testing Start'], project.__id);
+                const testEndDate = parseDateCached(project['Testing End'], project.__id);
+                const goLiveDate = parseDateCached(project['OH Go-Live Date'], project.__id);
+
+                const statusClass = getStatusClass(status);
 
                 return `
-                    <div class="project-item">
-                        <div class="project-header">
-                            <div class="project-title">${facilityName}</div>
-                            ${projectShortName ? `<div class="project-subtitle">${projectShortName}</div>` : ''}
+                    <div class="project-card">
+                        <div class="project-card-header">
+                            <h4 class="project-name">${facilityName}</h4>
+                            <span class="status-badge ${statusClass}">${status}</span>
                         </div>
-                        <div class="project-details">
-                            ${projectShortName ? `
-                            <div class="project-info-row">
+                        <div class="project-card-body">
+                            ${projectShortName ? `<div class="project-info-row">
                                 <span class="project-info-label">Project:</span>
                                 <span class="project-info-value">${projectShortName}</span>
                             </div>` : ''}
                             <div class="project-info-row">
                                 <span class="project-info-label">Type:</span>
                                 <span class="project-info-value">${projectType}</span>
-                            </div>
-                            <div class="project-info-row">
-                                <span class="project-info-label">Status:</span>
-                                <span class="project-info-value">${status}</span>
                             </div>
                             <div class="project-info-row">
                                 <span class="project-info-label">Region:</span>
@@ -3047,20 +3047,18 @@ function updateSidePanelContent() {
                             </div>
                             <div class="project-info-row">
                                 <span class="project-info-label">Lead:</span>
-                                <span class="project-info-value">${lead}</span>
+                                <span class="project-info-value">${projectLead}</span>
                             </div>
                             <div class="project-info-row">
                                 <span class="project-info-label">Specialist:</span>
                                 <span class="project-info-value">${specialist}</span>
                             </div>
-                            <div class="project-info-row">
-                                <span class="project-info-label">Kick-Off:</span>
-                                <span class="project-info-value">${kickOffDate ? formatDate(kickOffDate) : 'Not Set'}</span>
-                            </div>
-                            <div class="project-info-row">
-                                <span class="project-info-label">Go-Live:</span>
-                                <span class="project-info-value">${goLiveDate ? formatDate(goLiveDate) : 'Not Set'}</span>
-                            </div>
+                        </div>
+                        <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); font-size: 0.875rem;">
+                            ${kickOffDate ? `<div style="margin-bottom: 0.25rem;">Kick-Off: <strong>${formatDate(kickOffDate)}</strong></div>` : '<div style="margin-bottom: 0.25rem; color: var(--text-secondary);">Kick-Off: Not Set</div>'}
+                            ${testStartDate ? `<div style="margin-bottom: 0.25rem;">Testing Start: <strong>${formatDate(testStartDate)}</strong></div>` : ''}
+                            ${testEndDate ? `<div style="margin-bottom: 0.25rem;">Testing End: <strong>${formatDate(testEndDate)}</strong></div>` : ''}
+                            ${goLiveDate ? `<div>Go-Live: <strong>${formatDate(goLiveDate)}</strong></div>` : '<div style="color: var(--text-secondary);">Go-Live: Not Set</div>'}
                         </div>
                     </div>
                 `;
