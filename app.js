@@ -615,8 +615,13 @@ function toggleFilterOption(filterType, value) {
         activeFilters[filterType].splice(index, 1);
     }
 
-    // Update checkbox state in dropdown to keep UI in sync
-    populateFilterDropdown(`${filterType}FilterOptions`, filterType, filterOptions[filterType]);
+    // Update only the specific checkbox to keep dropdown open for multi-select
+    // (Full dropdown refresh happens in removeFilterTag for periodic sync)
+    const checkboxId = `${filterType}-${value.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const checkbox = document.getElementById(checkboxId);
+    if (checkbox) {
+        checkbox.checked = activeFilters[filterType].includes(value);
+    }
 
     updateActiveFiltersDisplay();
     applyFilters();
