@@ -1053,7 +1053,7 @@ function createLeadWorkloadChart() {
 
     const sortedLeads = Object.entries(leadCounts)
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 10);
+        .slice(0, 50);
 
     const ctx = document.getElementById('leadWorkloadChart').getContext('2d');
     charts.leadWorkloadChart = new Chart(ctx, {
@@ -1102,7 +1102,7 @@ function createSpecialistWorkloadChart() {
 
     const sortedSpecialists = Object.entries(specialistCounts)
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 10);
+        .slice(0, 50);
 
     const ctx = document.getElementById('specialistWorkloadChart').getContext('2d');
     charts.specialistWorkloadChart = new Chart(ctx, {
