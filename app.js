@@ -615,6 +615,9 @@ function toggleFilterOption(filterType, value) {
         activeFilters[filterType].splice(index, 1);
     }
 
+    // Update checkbox state in dropdown to keep UI in sync
+    populateFilterDropdown(`${filterType}FilterOptions`, filterType, filterOptions[filterType]);
+
     updateActiveFiltersDisplay();
     applyFilters();
 }
@@ -1932,7 +1935,7 @@ function applyFilters() {
         } finally {
             hideLoading();
         }
-    }, 300); // 300ms debounce delay
+    }, 100); // 100ms debounce delay - reduced for better responsiveness
 }
 
 // Clear all filters - OPTIMIZED: Async with loading indicator
