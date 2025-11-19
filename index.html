@@ -353,6 +353,99 @@
                                 <button class="btn-add-override" onclick="showAddOverrideModal()">+ Add Override</button>
                             </div>
                         </div>
+
+                        <!-- Phase Weight Configuration -->
+                        <div class="config-row" style="margin-top: 2rem; padding-top: 2rem; border-top: 2px solid var(--border);">
+                            <div class="config-item-full">
+                                <h4 style="margin-bottom: 1rem; color: var(--text-primary);">Phase Weight Configuration (% of capacity per project)</h4>
+
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 1.5rem;">
+                                    <!-- Project Lead Weights -->
+                                    <div>
+                                        <h5 style="margin-bottom: 0.75rem; color: var(--primary-color);">Project Lead Phase Weights</h5>
+                                        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                                            <div class="config-item">
+                                                <label style="min-width: 200px;">Pre-Kickoff (>30 days):</label>
+                                                <input type="number" id="leadPreKickoff30Plus" min="0" max="100" value="10" onchange="saveCapacityConfig()" style="width: 80px;">
+                                                <span class="config-hint">%</span>
+                                            </div>
+                                            <div class="config-item">
+                                                <label style="min-width: 200px;">Pre-Kickoff (0-30 days):</label>
+                                                <input type="number" id="leadPreKickoff0to30" min="0" max="100" value="30" onchange="saveCapacityConfig()" style="width: 80px;">
+                                                <span class="config-hint">%</span>
+                                            </div>
+                                            <div class="config-item">
+                                                <label style="min-width: 200px;">Active Pre-Testing:</label>
+                                                <input type="number" id="leadActivePreTesting" min="0" max="100" value="100" onchange="saveCapacityConfig()" style="width: 80px;">
+                                                <span class="config-hint">%</span>
+                                            </div>
+                                            <div class="config-item">
+                                                <label style="min-width: 200px;">Active Testing:</label>
+                                                <input type="number" id="leadActiveTesting" min="0" max="100" value="80" onchange="saveCapacityConfig()" style="width: 80px;">
+                                                <span class="config-hint">%</span>
+                                            </div>
+                                            <div class="config-item">
+                                                <label style="min-width: 200px;">Active Post-Testing:</label>
+                                                <input type="number" id="leadActivePostTesting" min="0" max="100" value="60" onchange="saveCapacityConfig()" style="width: 80px;">
+                                                <span class="config-hint">%</span>
+                                            </div>
+                                            <div class="config-item">
+                                                <label style="min-width: 200px;">Post-Go-Live (0-30 days):</label>
+                                                <input type="number" id="leadPostGoLive0to30" min="0" max="100" value="20" onchange="saveCapacityConfig()" style="width: 80px;">
+                                                <span class="config-hint">%</span>
+                                            </div>
+                                            <div class="config-item">
+                                                <label style="min-width: 200px;">Post-Go-Live (>30 days):</label>
+                                                <input type="number" id="leadPostGoLive30Plus" min="0" max="100" value="5" onchange="saveCapacityConfig()" style="width: 80px;">
+                                                <span class="config-hint">%</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Specialist Weights -->
+                                    <div>
+                                        <h5 style="margin-bottom: 0.75rem; color: var(--primary-color);">Specialist Phase Weights</h5>
+                                        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                                            <div class="config-item">
+                                                <label style="min-width: 200px;">Pre-Kickoff (>30 days):</label>
+                                                <input type="number" id="specialistPreKickoff30Plus" min="0" max="100" value="5" onchange="saveCapacityConfig()" style="width: 80px;">
+                                                <span class="config-hint">%</span>
+                                            </div>
+                                            <div class="config-item">
+                                                <label style="min-width: 200px;">Pre-Kickoff (0-30 days):</label>
+                                                <input type="number" id="specialistPreKickoff0to30" min="0" max="100" value="20" onchange="saveCapacityConfig()" style="width: 80px;">
+                                                <span class="config-hint">%</span>
+                                            </div>
+                                            <div class="config-item">
+                                                <label style="min-width: 200px;">Active Pre-Testing:</label>
+                                                <input type="number" id="specialistActivePreTesting" min="0" max="100" value="70" onchange="saveCapacityConfig()" style="width: 80px;">
+                                                <span class="config-hint">%</span>
+                                            </div>
+                                            <div class="config-item">
+                                                <label style="min-width: 200px;">Active Testing:</label>
+                                                <input type="number" id="specialistActiveTesting" min="0" max="100" value="100" onchange="saveCapacityConfig()" style="width: 80px;">
+                                                <span class="config-hint">%</span>
+                                            </div>
+                                            <div class="config-item">
+                                                <label style="min-width: 200px;">Active Post-Testing:</label>
+                                                <input type="number" id="specialistActivePostTesting" min="0" max="100" value="80" onchange="saveCapacityConfig()" style="width: 80px;">
+                                                <span class="config-hint">%</span>
+                                            </div>
+                                            <div class="config-item">
+                                                <label style="min-width: 200px;">Post-Go-Live (0-30 days):</label>
+                                                <input type="number" id="specialistPostGoLive0to30" min="0" max="100" value="30" onchange="saveCapacityConfig()" style="width: 80px;">
+                                                <span class="config-hint">%</span>
+                                            </div>
+                                            <div class="config-item">
+                                                <label style="min-width: 200px;">Post-Go-Live (>30 days):</label>
+                                                <input type="number" id="specialistPostGoLive30Plus" min="0" max="100" value="10" onchange="saveCapacityConfig()" style="width: 80px;">
+                                                <span class="config-hint">%</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -378,10 +471,16 @@
                     </div>
                 </div>
 
-                <!-- Capacity Chart -->
-                <div class="chart-card full-width">
-                    <h3>Team Capacity Utilization</h3>
-                    <canvas id="capacityUtilizationChart"></canvas>
+                <!-- Phase Distribution Charts -->
+                <div class="charts-container">
+                    <div class="chart-card">
+                        <h3>Project Leads - Phase Distribution</h3>
+                        <canvas id="leadsPhaseChart"></canvas>
+                    </div>
+                    <div class="chart-card">
+                        <h3>Specialists - Phase Distribution</h3>
+                        <canvas id="specialistsPhaseChart"></canvas>
+                    </div>
                 </div>
             </div>
 

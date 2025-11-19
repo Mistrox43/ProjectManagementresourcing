@@ -26,16 +26,158 @@ let capacityConfig = {
     defaultLeadCapacity: 5,
     defaultSpecialistCapacity: 8,
     alertThreshold: 80,
-    individualOverrides: {}
+    individualOverrides: {},
+    phaseWeights: {
+        lead: {
+            preKickoff30Plus: 10,      // Pre-Kickoff (>30 days)
+            preKickoff0to30: 30,        // Pre-Kickoff (0-30 days)
+            activePreTesting: 100,      // Active Pre-Testing
+            activeTesting: 80,          // Active Testing
+            activePostTesting: 60,      // Active Post-Testing
+            postGoLive0to30: 20,        // Post-Go-Live (0-30 days)
+            postGoLive30Plus: 5         // Post-Go-Live (>30 days)
+        },
+        specialist: {
+            preKickoff30Plus: 5,        // Pre-Kickoff (>30 days)
+            preKickoff0to30: 20,        // Pre-Kickoff (0-30 days)
+            activePreTesting: 70,       // Active Pre-Testing
+            activeTesting: 100,         // Active Testing
+            activePostTesting: 80,      // Active Post-Testing
+            postGoLive0to30: 30,        // Post-Go-Live (0-30 days)
+            postGoLive30Plus: 10        // Post-Go-Live (>30 days)
+        }
+    }
 };
 
 let currentCapacityFilter = 'all'; // Current capacity view filter
+let expandedCapacityCards = new Set(); // Track which capacity cards are expanded
 
 // Performance optimization variables
 let parsedDateCache = new Map(); // Cache for parsed dates
 let filterDebounceTimer = null; // Debounce timer for filter changes
 let isUpdating = false; // Flag to prevent concurrent updates
 let pendingUpdate = false; // Flag to track if an update is pending
+
+// Determine project phase based on dates
+function determineProjectPhase(project) {
+    const now = new Date();
+    const thirtyDaysFromNow = new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000));
+    const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+
+    // Parse all required dates
+    const kickOffDate = parseDateCached(project['Kick-Off Date'], project.__id);
+    const testStartDate = parseDateCached(project['Testing Start'], project.__id);
+    const testEndDate = parseDateCached(project['Testing End'], project.__id);
+    const goLiveDate = parseDateCached(project['OH Go-Live Date'], project.__id);
+
+    // Check if project status is closed/complete
+    const status = project['Project Status'];
+    const isClosed = status && (status.toLowerCase().includes('complete') || status.toLowerCase().includes('closed'));
+
+    // Validate date sequence: Kick-off < Testing Start < Testing End < Go-Live
+    let dateSequenceError = null;
+    if (kickOffDate && testStartDate && kickOffDate >= testStartDate) {
+        dateSequenceError = 'Kick-off date must be before Testing Start';
+    } else if (testStartDate && testEndDate && testStartDate > testEndDate) {
+        dateSequenceError = 'Testing Start must be before Testing End';
+    } else if (testEndDate && goLiveDate && testEndDate >= goLiveDate) {
+        dateSequenceError = 'Testing End must be before Go-Live';
+    } else if (kickOffDate && goLiveDate && kickOffDate >= goLiveDate) {
+        dateSequenceError = 'Kick-off must be before Go-Live';
+    }
+
+    // If dates are invalid or project is closed, return appropriate phase
+    if (dateSequenceError) {
+        return {
+            phase: 'dateError',
+            phaseName: 'Date Sequence Error',
+            error: dateSequenceError
+        };
+    }
+
+    if (isClosed) {
+        return {
+            phase: 'closed',
+            phaseName: 'Closed/Complete',
+            error: null
+        };
+    }
+
+    // Determine phase based on date ranges
+    // Phase 1: Pre-Kickoff (>30 days)
+    if (kickOffDate && kickOffDate > thirtyDaysFromNow) {
+        return {
+            phase: 'preKickoff30Plus',
+            phaseName: 'Pre-Kickoff (>30 days)',
+            error: null
+        };
+    }
+
+    // Phase 2: Pre-Kickoff (0-30 days)
+    if (kickOffDate && kickOffDate > now && kickOffDate <= thirtyDaysFromNow) {
+        return {
+            phase: 'preKickoff0to30',
+            phaseName: 'Pre-Kickoff (0-30 days)',
+            error: null
+        };
+    }
+
+    // Phase 3: Active Pre-Testing
+    if (kickOffDate && kickOffDate <= now) {
+        if (!testStartDate || testStartDate > now) {
+            return {
+                phase: 'activePreTesting',
+                phaseName: 'Active Pre-Testing',
+                error: null
+            };
+        }
+    }
+
+    // Phase 4: Active Testing
+    if (testStartDate && testEndDate && testStartDate <= now && testEndDate >= now) {
+        return {
+            phase: 'activeTesting',
+            phaseName: 'Active Testing',
+            error: null
+        };
+    }
+
+    // Phase 5: Active Post-Testing
+    if (testEndDate && testEndDate < now) {
+        if (!goLiveDate || goLiveDate > now) {
+            return {
+                phase: 'activePostTesting',
+                phaseName: 'Active Post-Testing',
+                error: null
+            };
+        }
+    }
+
+    // Phase 6: Post-Go-Live (0-30 days)
+    if (goLiveDate && goLiveDate < now && goLiveDate >= thirtyDaysAgo) {
+        return {
+            phase: 'postGoLive0to30',
+            phaseName: 'Post-Go-Live (0-30 days)',
+            error: null
+        };
+    }
+
+    // Phase 7: Post-Go-Live (>30 days)
+    if (goLiveDate && goLiveDate < thirtyDaysAgo) {
+        return {
+            phase: 'postGoLive30Plus',
+            phaseName: 'Post-Go-Live (>30 days)',
+            error: null
+        };
+    }
+
+    // Unknown phase - missing critical dates
+    return {
+        phase: 'unknown',
+        phaseName: 'Unknown Phase',
+        error: 'Missing critical date information'
+    };
+}
 
 // Tab switching function
 function switchTab(tabName) {
@@ -495,6 +637,7 @@ function updateMetrics() {
     let noLead = 0;
     let noSpecialists = 0;
     let multipleSpecialists = 0;
+    let dateSequenceErrors = 0;
 
     const uniqueLeads = new Set();
     const uniqueSpecialists = new Set();
@@ -507,6 +650,12 @@ function updateMetrics() {
         const kickOffDate = parseDateCached(p['Kick-Off Date'], p.__id);
         const testStartDate = parseDateCached(p['Testing Start'], p.__id);
         const testEndDate = parseDateCached(p['Testing End'], p.__id);
+
+        // Check for date sequence errors
+        const phaseInfo = determineProjectPhase(p);
+        if (phaseInfo.phase === 'dateError') {
+            dateSequenceErrors++;
+        }
 
         // Active projects
         const status = p['Project Status'];
@@ -600,6 +749,7 @@ function updateMetrics() {
     const dataMetrics = [
         { label: 'Missing Date Data', value: missingAnyDate, subtitle: `Go-Live: ${missingGoLive}, Kick-Off: ${missingKickOff}`, clickable: true },
         { label: 'Missing Testing Dates', value: missingAnyTestDate, subtitle: `Test Start: ${missingTestStart}, Test End: ${missingTestEnd}, Not Required: ${testingNotRequired}`, clickable: true },
+        { label: 'Date Sequence Errors', value: dateSequenceErrors, subtitle: 'Invalid date order', clickable: true },
         { label: 'Projects Without Lead', value: noLead, subtitle: 'No lead assigned', clickable: true },
         { label: 'Specialist Assignment Issues', value: specialistIssues, subtitle: `No Specialists: ${noSpecialists}, Multiple Specialists: ${multipleSpecialists}`, clickable: true }
     ];
@@ -637,6 +787,8 @@ function updateMetrics() {
                     clickHandler = 'openMissingDatesPanel()';
                 } else if (m.label === 'Missing Testing Dates') {
                     clickHandler = 'openMissingTestingDatesPanel()';
+                } else if (m.label === 'Date Sequence Errors') {
+                    clickHandler = 'openDateSequenceErrorsPanel()';
                 } else if (m.label === 'Projects Without Lead') {
                     clickHandler = 'openNoLeadPanel()';
                 } else if (m.label === 'Specialist Assignment Issues') {
@@ -1995,6 +2147,22 @@ function openSpecialistIssuesPanel() {
     updateSidePanelContent();
 }
 
+// Open Date Sequence Errors Panel
+function openDateSequenceErrorsPanel() {
+    sidePanelState = {
+        isOpen: true,
+        chartType: 'date-sequence-errors',
+        monthIndex: 0,
+        allMonths: [],
+        chartData: null
+    };
+
+    document.getElementById('sidePanel').classList.add('open');
+    document.getElementById('sidePanelOverlay').classList.add('open');
+
+    updateSidePanelContent();
+}
+
 // Close Side Panel
 function closeSidePanel() {
     document.getElementById('sidePanel').classList.remove('open');
@@ -2427,6 +2595,246 @@ function updateSidePanelContent() {
         return;
     }
 
+    // Handle date-sequence-errors panel
+    if (sidePanelState.chartType === 'date-sequence-errors') {
+        document.getElementById('panelTitle').textContent = 'Projects with Date Sequence Errors';
+        document.querySelector('.panel-navigation').style.display = 'none';
+
+        // Get projects with date sequence errors
+        const errorProjects = filteredData.filter(p => {
+            const phaseInfo = determineProjectPhase(p);
+            return phaseInfo.phase === 'dateError';
+        });
+
+        // Update summary stats
+        const summaryHTML = `
+            <div class="panel-stat">
+                <div class="panel-stat-label">Date Sequence Errors</div>
+                <div class="panel-stat-value">${errorProjects.length}</div>
+            </div>
+        `;
+        document.getElementById('panelSummary').innerHTML = summaryHTML;
+
+        // Display all projects with date errors
+        if (errorProjects.length === 0) {
+            document.getElementById('panelProjects').innerHTML = `
+                <div class="panel-empty">
+                    <div class="panel-empty-icon">✓</div>
+                    <p>All projects have valid date sequences!</p>
+                </div>
+            `;
+        } else {
+            const projectsHTML = errorProjects.map(project => {
+                const facilityName = project['Facility Name'] || 'Unknown Facility';
+                const projectShortName = project['Project Short Name'] || '';
+                const projectLead = project['OH Project Lead'] || 'Not Assigned';
+                const specialist = project['OH Specialist(s)'] || 'Not Assigned';
+                const status = project['Project Status'] || 'Unknown';
+                const region = project['OH Region'] || 'Unknown';
+                const projectType = project['Project Type'] || 'Unknown';
+                const lob = project['LOB'] || 'Unknown';
+
+                const kickOffDate = parseDateCached(project['Kick-Off Date'], project.__id);
+                const testStartDate = parseDateCached(project['Testing Start'], project.__id);
+                const testEndDate = parseDateCached(project['Testing End'], project.__id);
+                const goLiveDate = parseDateCached(project['OH Go-Live Date'], project.__id);
+
+                const statusClass = getStatusClass(status);
+
+                // Get error details
+                const phaseInfo = determineProjectPhase(project);
+                const errorMessage = phaseInfo.error || 'Unknown error';
+
+                return `
+                    <div class="project-card">
+                        <div class="project-card-header">
+                            <h4 class="project-name">${facilityName}</h4>
+                            <span class="status-badge ${statusClass}">${status}</span>
+                        </div>
+                        <div class="project-card-body">
+                            ${projectShortName ? `<div class="project-info-row">
+                                <span class="project-info-label">Project:</span>
+                                <span class="project-info-value">${projectShortName}</span>
+                            </div>` : ''}
+                            <div class="project-info-row">
+                                <span class="project-info-label">Type:</span>
+                                <span class="project-info-value">${projectType}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Region:</span>
+                                <span class="project-info-value">${region}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">LOB:</span>
+                                <span class="project-info-value">${lob}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Lead:</span>
+                                <span class="project-info-value">${projectLead}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Specialist:</span>
+                                <span class="project-info-value">${specialist}</span>
+                            </div>
+                        </div>
+                        <div class="project-missing-dates">
+                            <div class="missing-dates-label">Date Sequence Error:</div>
+                            <div class="missing-dates-list">
+                                <span class="missing-date-badge" style="background: #fee2e2; color: #991b1b;">${errorMessage}</span>
+                            </div>
+                            <div style="margin-top: 0.75rem; font-size: 0.875rem; color: var(--text-secondary);">
+                                ${kickOffDate ? `<div>Kick-Off: ${formatDate(kickOffDate)}</div>` : '<div>Kick-Off: Missing</div>'}
+                                ${testStartDate ? `<div>Testing Start: ${formatDate(testStartDate)}</div>` : '<div>Testing Start: Missing</div>'}
+                                ${testEndDate ? `<div>Testing End: ${formatDate(testEndDate)}</div>` : '<div>Testing End: Missing</div>'}
+                                ${goLiveDate ? `<div>Go-Live: ${formatDate(goLiveDate)}</div>` : '<div>Go-Live: Missing</div>'}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('panelProjects').innerHTML = projectsHTML;
+        }
+        return;
+    }
+
+    // Handle person projects panel
+    if (sidePanelState.chartType === 'person-projects') {
+        const { person, role, projects } = sidePanelState;
+        document.getElementById('panelTitle').textContent = `${person}'s Active Projects`;
+        document.querySelector('.panel-navigation').style.display = 'none';
+
+        // Calculate phase breakdown
+        const phaseBreakdown = {
+            preKickoff30Plus: 0, preKickoff0to30: 0, activePreTesting: 0,
+            activeTesting: 0, activePostTesting: 0, postGoLive0to30: 0,
+            postGoLive30Plus: 0, unknown: 0, dateError: 0, closed: 0
+        };
+
+        projects.forEach(project => {
+            const phaseInfo = determineProjectPhase(project);
+            if (phaseBreakdown[phaseInfo.phase] !== undefined) {
+                phaseBreakdown[phaseInfo.phase]++;
+            }
+        });
+
+        // Filter out closed projects for the display
+        const activeProjectsList = projects.filter(p => {
+            const phaseInfo = determineProjectPhase(p);
+            return phaseInfo.phase !== 'closed';
+        });
+
+        // Update summary stats
+        const summaryHTML = `
+            <div class="panel-stat">
+                <div class="panel-stat-label">Total Active Projects</div>
+                <div class="panel-stat-value">${activeProjectsList.length}</div>
+            </div>
+            <div class="panel-stat">
+                <div class="panel-stat-label">Role</div>
+                <div class="panel-stat-value">${role}</div>
+            </div>
+            ${phaseBreakdown.preKickoff30Plus + phaseBreakdown.preKickoff0to30 > 0 ? `
+                <div class="panel-stat">
+                    <div class="panel-stat-label">Pre-Kickoff</div>
+                    <div class="panel-stat-value">${phaseBreakdown.preKickoff30Plus + phaseBreakdown.preKickoff0to30}</div>
+                </div>
+            ` : ''}
+            ${phaseBreakdown.activePreTesting + phaseBreakdown.activeTesting + phaseBreakdown.activePostTesting > 0 ? `
+                <div class="panel-stat">
+                    <div class="panel-stat-label">Active Phase</div>
+                    <div class="panel-stat-value">${phaseBreakdown.activePreTesting + phaseBreakdown.activeTesting + phaseBreakdown.activePostTesting}</div>
+                </div>
+            ` : ''}
+            ${phaseBreakdown.postGoLive0to30 + phaseBreakdown.postGoLive30Plus > 0 ? `
+                <div class="panel-stat">
+                    <div class="panel-stat-label">Post-Go-Live</div>
+                    <div class="panel-stat-value">${phaseBreakdown.postGoLive0to30 + phaseBreakdown.postGoLive30Plus}</div>
+                </div>
+            ` : ''}
+        `;
+        document.getElementById('panelSummary').innerHTML = summaryHTML;
+
+        // Display all active projects
+        if (activeProjectsList.length === 0) {
+            document.getElementById('panelProjects').innerHTML = `
+                <div class="panel-empty">
+                    <div class="panel-empty-icon">✓</div>
+                    <p>No active projects found for ${person}</p>
+                </div>
+            `;
+        } else {
+            const projectsHTML = activeProjectsList.map(project => {
+                const facilityName = project['Facility Name'] || 'Unknown Facility';
+                const projectShortName = project['Project Short Name'] || '';
+                const projectLead = project['OH Project Lead'] || 'Not Assigned';
+                const specialist = project['OH Specialist(s)'] || 'Not Assigned';
+                const status = project['Project Status'] || 'Unknown';
+                const region = project['OH Region'] || 'Unknown';
+                const projectType = project['Project Type'] || 'Unknown';
+                const lob = project['LOB'] || 'Unknown';
+
+                const kickOffDate = parseDateCached(project['Kick-Off Date'], project.__id);
+                const testStartDate = parseDateCached(project['Testing Start'], project.__id);
+                const testEndDate = parseDateCached(project['Testing End'], project.__id);
+                const goLiveDate = parseDateCached(project['OH Go-Live Date'], project.__id);
+
+                const statusClass = getStatusClass(status);
+
+                // Get phase info
+                const phaseInfo = determineProjectPhase(project);
+
+                return `
+                    <div class="project-card">
+                        <div class="project-card-header">
+                            <h4 class="project-name">${facilityName}</h4>
+                            <span class="status-badge ${statusClass}">${status}</span>
+                        </div>
+                        <div class="project-card-body">
+                            ${projectShortName ? `<div class="project-info-row">
+                                <span class="project-info-label">Project:</span>
+                                <span class="project-info-value">${projectShortName}</span>
+                            </div>` : ''}
+                            <div class="project-info-row">
+                                <span class="project-info-label">Type:</span>
+                                <span class="project-info-value">${projectType}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Region:</span>
+                                <span class="project-info-value">${region}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">LOB:</span>
+                                <span class="project-info-value">${lob}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Lead:</span>
+                                <span class="project-info-value">${projectLead}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Specialist:</span>
+                                <span class="project-info-value">${specialist}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Phase:</span>
+                                <span class="project-info-value" style="font-weight: 600; color: ${phaseInfo.phase === 'unknown' || phaseInfo.phase === 'dateError' ? 'var(--warning-color)' : 'var(--primary-color)'};">${phaseInfo.phaseName}</span>
+                            </div>
+                        </div>
+                        <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); font-size: 0.875rem;">
+                            ${kickOffDate ? `<div style="margin-bottom: 0.25rem;">Kick-Off: <strong>${formatDate(kickOffDate)}</strong></div>` : ''}
+                            ${testStartDate ? `<div style="margin-bottom: 0.25rem;">Testing Start: <strong>${formatDate(testStartDate)}</strong></div>` : ''}
+                            ${testEndDate ? `<div style="margin-bottom: 0.25rem;">Testing End: <strong>${formatDate(testEndDate)}</strong></div>` : ''}
+                            ${goLiveDate ? `<div>Go-Live: <strong>${formatDate(goLiveDate)}</strong></div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('panelProjects').innerHTML = projectsHTML;
+        }
+        return;
+    }
+
     // Handle timeline panels
     document.querySelector('.panel-navigation').style.display = 'flex';
 
@@ -2634,7 +3042,22 @@ function loadCapacityConfig() {
     const saved = localStorage.getItem('capacityConfig');
     if (saved) {
         try {
-            capacityConfig = JSON.parse(saved);
+            const savedConfig = JSON.parse(saved);
+            // Merge saved config with defaults (in case new fields were added)
+            capacityConfig = {
+                ...capacityConfig,
+                ...savedConfig,
+                phaseWeights: {
+                    lead: {
+                        ...capacityConfig.phaseWeights.lead,
+                        ...(savedConfig.phaseWeights?.lead || {})
+                    },
+                    specialist: {
+                        ...capacityConfig.phaseWeights.specialist,
+                        ...(savedConfig.phaseWeights?.specialist || {})
+                    }
+                }
+            };
         } catch (e) {
             console.error('Error loading capacity config:', e);
         }
@@ -2649,6 +3072,40 @@ function loadCapacityConfig() {
     if (specialistInput) specialistInput.value = capacityConfig.defaultSpecialistCapacity;
     if (thresholdInput) thresholdInput.value = capacityConfig.alertThreshold;
 
+    // Load phase weight inputs
+    const phaseInputs = {
+        lead: {
+            preKickoff30Plus: document.getElementById('leadPreKickoff30Plus'),
+            preKickoff0to30: document.getElementById('leadPreKickoff0to30'),
+            activePreTesting: document.getElementById('leadActivePreTesting'),
+            activeTesting: document.getElementById('leadActiveTesting'),
+            activePostTesting: document.getElementById('leadActivePostTesting'),
+            postGoLive0to30: document.getElementById('leadPostGoLive0to30'),
+            postGoLive30Plus: document.getElementById('leadPostGoLive30Plus')
+        },
+        specialist: {
+            preKickoff30Plus: document.getElementById('specialistPreKickoff30Plus'),
+            preKickoff0to30: document.getElementById('specialistPreKickoff0to30'),
+            activePreTesting: document.getElementById('specialistActivePreTesting'),
+            activeTesting: document.getElementById('specialistActiveTesting'),
+            activePostTesting: document.getElementById('specialistActivePostTesting'),
+            postGoLive0to30: document.getElementById('specialistPostGoLive0to30'),
+            postGoLive30Plus: document.getElementById('specialistPostGoLive30Plus')
+        }
+    };
+
+    Object.keys(phaseInputs.lead).forEach(phase => {
+        if (phaseInputs.lead[phase]) {
+            phaseInputs.lead[phase].value = capacityConfig.phaseWeights.lead[phase];
+        }
+    });
+
+    Object.keys(phaseInputs.specialist).forEach(phase => {
+        if (phaseInputs.specialist[phase]) {
+            phaseInputs.specialist[phase].value = capacityConfig.phaseWeights.specialist[phase];
+        }
+    });
+
     renderCapacityOverrides();
 }
 
@@ -2657,6 +3114,22 @@ function saveCapacityConfig() {
     capacityConfig.defaultLeadCapacity = parseInt(document.getElementById('defaultLeadCapacity').value);
     capacityConfig.defaultSpecialistCapacity = parseInt(document.getElementById('defaultSpecialistCapacity').value);
     capacityConfig.alertThreshold = parseInt(document.getElementById('alertThreshold').value);
+
+    // Save phase weights
+    const phaseFields = ['preKickoff30Plus', 'preKickoff0to30', 'activePreTesting', 'activeTesting',
+                         'activePostTesting', 'postGoLive0to30', 'postGoLive30Plus'];
+
+    phaseFields.forEach(phase => {
+        const leadInput = document.getElementById(`lead${phase.charAt(0).toUpperCase() + phase.slice(1)}`);
+        const specialistInput = document.getElementById(`specialist${phase.charAt(0).toUpperCase() + phase.slice(1)}`);
+
+        if (leadInput) {
+            capacityConfig.phaseWeights.lead[phase] = parseInt(leadInput.value) || 0;
+        }
+        if (specialistInput) {
+            capacityConfig.phaseWeights.specialist[phase] = parseInt(specialistInput.value) || 0;
+        }
+    });
 
     localStorage.setItem('capacityConfig', JSON.stringify(capacityConfig));
 
@@ -2772,18 +3245,60 @@ function renderCapacityOverrides() {
 function calculateResourceCapacity(person, role) {
     const now = new Date();
 
-    // Get all active projects for this person
+    // Get all projects for this person (not just active, to see all phases)
     const personProjects = filteredData.filter(p => {
         const isLead = p['OH Project Lead'] === person;
         const isSpecialist = p['OH Specialist(s)'] === person;
 
-        const status = p['Project Status'];
-        const isActive = status && !status.toLowerCase().includes('complete') && !status.toLowerCase().includes('closed');
-
-        return (isLead || isSpecialist) && isActive;
+        return (isLead || isSpecialist);
     });
 
-    const currentProjects = personProjects.length;
+    // Initialize phase breakdown
+    const phaseBreakdown = {
+        preKickoff30Plus: [],
+        preKickoff0to30: [],
+        activePreTesting: [],
+        activeTesting: [],
+        activePostTesting: [],
+        postGoLive0to30: [],
+        postGoLive30Plus: [],
+        unknown: [],
+        dateError: [],
+        closed: []
+    };
+
+    // Categorize projects by phase and calculate weighted capacity
+    let weightedCapacity = 0;
+    const weights = role === 'Lead' ? capacityConfig.phaseWeights.lead : capacityConfig.phaseWeights.specialist;
+
+    personProjects.forEach(project => {
+        const phaseInfo = determineProjectPhase(project);
+        const phase = phaseInfo.phase;
+
+        // Add project to phase breakdown
+        if (phaseBreakdown[phase] !== undefined) {
+            phaseBreakdown[phase].push(project);
+        }
+
+        // Add weighted capacity (only for valid phases, not closed/error/unknown)
+        if (weights[phase] !== undefined) {
+            weightedCapacity += weights[phase] / 100; // Convert percentage to decimal
+        }
+    });
+
+    // Count projects in each phase
+    const phaseCounts = {
+        preKickoff30Plus: phaseBreakdown.preKickoff30Plus.length,
+        preKickoff0to30: phaseBreakdown.preKickoff0to30.length,
+        activePreTesting: phaseBreakdown.activePreTesting.length,
+        activeTesting: phaseBreakdown.activeTesting.length,
+        activePostTesting: phaseBreakdown.activePostTesting.length,
+        postGoLive0to30: phaseBreakdown.postGoLive0to30.length,
+        postGoLive30Plus: phaseBreakdown.postGoLive30Plus.length,
+        unknown: phaseBreakdown.unknown.length,
+        dateError: phaseBreakdown.dateError.length,
+        closed: phaseBreakdown.closed.length
+    };
 
     // Determine max capacity
     let maxCapacity;
@@ -2795,7 +3310,7 @@ function calculateResourceCapacity(person, role) {
         maxCapacity = capacityConfig.defaultSpecialistCapacity;
     }
 
-    const utilization = maxCapacity > 0 ? (currentProjects / maxCapacity) * 100 : 0;
+    const utilization = maxCapacity > 0 ? (weightedCapacity / maxCapacity) * 100 : 0;
     const alertThreshold = capacityConfig.alertThreshold;
 
     // Determine status
@@ -2814,27 +3329,38 @@ function calculateResourceCapacity(person, role) {
         statusClass = 'available';
     }
 
-    // Calculate next available date
+    // Calculate next available date (earliest project go-live from active phases)
     let nextAvailable = null;
-    if (currentProjects >= maxCapacity) {
-        // Find earliest project end date
-        const endDates = personProjects.map(p => parseDateCached(p['OH Go-Live Date'], p.__id)).filter(d => d);
+    if (weightedCapacity >= maxCapacity) {
+        const activeProjects = [
+            ...phaseBreakdown.activePreTesting,
+            ...phaseBreakdown.activeTesting,
+            ...phaseBreakdown.activePostTesting
+        ];
+        const endDates = activeProjects.map(p => parseDateCached(p['OH Go-Live Date'], p.__id)).filter(d => d);
         if (endDates.length > 0) {
             nextAvailable = new Date(Math.min(...endDates));
         }
     }
 
+    // Total project count (excluding closed)
+    const totalProjects = personProjects.length - phaseBreakdown.closed.length;
+
     return {
         person,
         role,
-        currentProjects,
+        totalProjects,
+        currentProjects: totalProjects, // For backwards compatibility
+        weightedCapacity: Math.round(weightedCapacity * 10) / 10, // Round to 1 decimal
         maxCapacity,
         utilization: Math.round(utilization),
         status,
         statusClass,
         nextAvailable,
         projects: personProjects,
-        availableCapacity: Math.max(0, maxCapacity - currentProjects)
+        phaseBreakdown,
+        phaseCounts,
+        availableCapacity: Math.max(0, maxCapacity - weightedCapacity)
     };
 }
 
@@ -2842,7 +3368,8 @@ function calculateResourceCapacity(person, role) {
 function renderCapacityPlanning() {
     renderCapacityMetrics();
     renderCapacityCards();
-    createCapacityUtilizationChart();
+    createLeadsPhaseChart();
+    createSpecialistsPhaseChart();
 }
 
 // Render capacity metrics
@@ -2917,14 +3444,21 @@ function renderCapacityCards() {
         return;
     }
 
-    container.innerHTML = allCapacities.map(capacity => `
-        <div class="resource-capacity-card">
-            <div class="resource-card-header">
+    container.innerHTML = allCapacities.map(capacity => {
+        const cardId = `${capacity.person}-${capacity.role}`.replace(/\s+/g, '-');
+        const isExpanded = expandedCapacityCards.has(cardId);
+
+        return `
+        <div class="resource-capacity-card ${isExpanded ? 'expanded' : ''}" data-card-id="${cardId}">
+            <div class="resource-card-header" onclick="toggleCapacityCard('${cardId}')">
                 <div>
                     <div class="resource-name">${capacity.person}</div>
                     <div class="resource-role">${capacity.role}</div>
                 </div>
-                <span class="capacity-status-badge ${capacity.statusClass}">${capacity.status}</span>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <span class="capacity-status-badge ${capacity.statusClass}">${capacity.status}</span>
+                    <span class="expand-icon">${isExpanded ? '▼' : '▶'}</span>
+                </div>
             </div>
             <div class="capacity-progress-bar">
                 <div class="capacity-progress-fill ${capacity.statusClass}" style="width: ${Math.min(100, capacity.utilization)}%">
@@ -2933,12 +3467,12 @@ function renderCapacityCards() {
             </div>
             <div class="capacity-details">
                 <div class="capacity-detail-item">
-                    <span class="capacity-detail-label">Current Load</span>
-                    <span class="capacity-detail-value">${capacity.currentProjects}/${capacity.maxCapacity}</span>
+                    <span class="capacity-detail-label">Weighted Capacity</span>
+                    <span class="capacity-detail-value">${capacity.weightedCapacity}/${capacity.maxCapacity}</span>
                 </div>
                 <div class="capacity-detail-item">
-                    <span class="capacity-detail-label">Available</span>
-                    <span class="capacity-detail-value">${capacity.availableCapacity} projects</span>
+                    <span class="capacity-detail-label">Total Projects</span>
+                    <span class="capacity-detail-value">${capacity.totalProjects}</span>
                 </div>
             </div>
             ${capacity.nextAvailable ? `
@@ -2947,17 +3481,63 @@ function renderCapacityCards() {
                     <span style="font-size: 0.875rem; font-weight: 600; color: var(--text-primary);">${formatDate(capacity.nextAvailable)}</span>
                 </div>
             ` : ''}
-            ${capacity.projects.length > 0 ? `
-                <div class="active-projects-list">
-                    <h4>Active Projects (${capacity.projects.length})</h4>
-                    ${capacity.projects.slice(0, 5).map(p => `
-                        <div class="project-item">${p['Project Short Name'] || p['Facility Name']}</div>
-                    `).join('')}
-                    ${capacity.projects.length > 5 ? `<div class="project-item">+ ${capacity.projects.length - 5} more...</div>` : ''}
-                </div>
-            ` : ''}
+            <div class="capacity-expandable-section" style="display: ${isExpanded ? 'block' : 'none'};">
+                ${capacity.phaseCounts && (capacity.phaseCounts.preKickoff30Plus > 0 || capacity.phaseCounts.preKickoff0to30 > 0 ||
+                   capacity.phaseCounts.activePreTesting > 0 || capacity.phaseCounts.activeTesting > 0 ||
+                   capacity.phaseCounts.activePostTesting > 0 || capacity.phaseCounts.postGoLive0to30 > 0 ||
+                   capacity.phaseCounts.postGoLive30Plus > 0 || capacity.phaseCounts.unknown > 0) ? `
+                    <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                        <h4 style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px;">Phase Breakdown:</h4>
+                        <div style="display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem;">
+                            ${capacity.phaseCounts.preKickoff30Plus > 0 ? `<div style="color: var(--text-primary);">• Pre-Kickoff (>30d): <strong>${capacity.phaseCounts.preKickoff30Plus}</strong> (${Math.round(capacity.phaseCounts.preKickoff30Plus * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.preKickoff30Plus : capacityConfig.phaseWeights.specialist.preKickoff30Plus) / 100 * 10) / 10})</div>` : ''}
+                            ${capacity.phaseCounts.preKickoff0to30 > 0 ? `<div style="color: var(--text-primary);">• Pre-Kickoff (0-30d): <strong>${capacity.phaseCounts.preKickoff0to30}</strong> (${Math.round(capacity.phaseCounts.preKickoff0to30 * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.preKickoff0to30 : capacityConfig.phaseWeights.specialist.preKickoff0to30) / 100 * 10) / 10})</div>` : ''}
+                            ${capacity.phaseCounts.activePreTesting > 0 ? `<div style="color: var(--text-primary);">• Active Pre-Testing: <strong>${capacity.phaseCounts.activePreTesting}</strong> (${Math.round(capacity.phaseCounts.activePreTesting * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.activePreTesting : capacityConfig.phaseWeights.specialist.activePreTesting) / 100 * 10) / 10})</div>` : ''}
+                            ${capacity.phaseCounts.activeTesting > 0 ? `<div style="color: var(--text-primary);">• Active Testing: <strong>${capacity.phaseCounts.activeTesting}</strong> (${Math.round(capacity.phaseCounts.activeTesting * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.activeTesting : capacityConfig.phaseWeights.specialist.activeTesting) / 100 * 10) / 10})</div>` : ''}
+                            ${capacity.phaseCounts.activePostTesting > 0 ? `<div style="color: var(--text-primary);">• Active Post-Testing: <strong>${capacity.phaseCounts.activePostTesting}</strong> (${Math.round(capacity.phaseCounts.activePostTesting * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.activePostTesting : capacityConfig.phaseWeights.specialist.activePostTesting) / 100 * 10) / 10})</div>` : ''}
+                            ${capacity.phaseCounts.postGoLive0to30 > 0 ? `<div style="color: var(--text-primary);">• Post-Go-Live (0-30d): <strong>${capacity.phaseCounts.postGoLive0to30}</strong> (${Math.round(capacity.phaseCounts.postGoLive0to30 * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.postGoLive0to30 : capacityConfig.phaseWeights.specialist.postGoLive0to30) / 100 * 10) / 10})</div>` : ''}
+                            ${capacity.phaseCounts.postGoLive30Plus > 0 ? `<div style="color: var(--text-primary);">• Post-Go-Live (>30d): <strong>${capacity.phaseCounts.postGoLive30Plus}</strong> (${Math.round(capacity.phaseCounts.postGoLive30Plus * (capacity.role === 'Lead' ? capacityConfig.phaseWeights.lead.postGoLive30Plus : capacityConfig.phaseWeights.specialist.postGoLive30Plus) / 100 * 10) / 10})</div>` : ''}
+                            ${capacity.phaseCounts.unknown > 0 ? `<div style="color: var(--warning-color);">• Unknown Phase: <strong>${capacity.phaseCounts.unknown}</strong></div>` : ''}
+                        </div>
+                    </div>
+                ` : ''}
+                ${capacity.projects.length > 0 ? `
+                    <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); text-align: center;">
+                        <button class="btn-view-projects" onclick="openPersonProjectsPanel('${capacity.person.replace(/'/g, "\\'")}', '${capacity.role}', ${JSON.stringify(capacity.projects.map(p => p.__id))})">
+                            View Active Projects (${capacity.projects.length})
+                        </button>
+                    </div>
+                ` : ''}
+            </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
+}
+
+// Toggle capacity card expansion
+function toggleCapacityCard(cardId) {
+    if (expandedCapacityCards.has(cardId)) {
+        expandedCapacityCards.delete(cardId);
+    } else {
+        expandedCapacityCards.add(cardId);
+    }
+    renderCapacityCards();
+}
+
+// Open side panel to show person's active projects
+function openPersonProjectsPanel(person, role, projectIds) {
+    // Find the actual project objects from the IDs
+    const projects = filteredData.filter(p => projectIds.includes(p.__id));
+
+    sidePanelState = {
+        isOpen: true,
+        chartType: 'person-projects',
+        person: person,
+        role: role,
+        projects: projects
+    };
+
+    document.getElementById('sidePanel').classList.add('open');
+    updateSidePanelContent();
 }
 
 // Filter capacity view
@@ -3057,6 +3637,262 @@ function createCapacityUtilizationChart() {
                 y: {
                     grid: {
                         display: false
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Create leads phase distribution chart
+function createLeadsPhaseChart() {
+    destroyChart('leadsPhaseChart');
+
+    const leads = [...new Set(filteredData.map(p => p['OH Project Lead']).filter(l => l))];
+    const capacities = leads.map(person => calculateResourceCapacity(person, 'Lead'));
+
+    // Sort by total project count descending
+    capacities.sort((a, b) => b.totalProjects - a.totalProjects);
+
+    const ctx = document.getElementById('leadsPhaseChart');
+    if (!ctx) return;
+
+    // Phase labels and colors
+    const phases = [
+        { key: 'preKickoff30Plus', label: 'Pre-Kickoff (>30d)', color: '#e0f2fe' },
+        { key: 'preKickoff0to30', label: 'Pre-Kickoff (0-30d)', color: '#7dd3fc' },
+        { key: 'activePreTesting', label: 'Active Pre-Testing', color: '#2563eb' },
+        { key: 'activeTesting', label: 'Active Testing', color: '#1e40af' },
+        { key: 'activePostTesting', label: 'Active Post-Testing', color: '#8b5cf6' },
+        { key: 'postGoLive0to30', label: 'Post-Go-Live (0-30d)', color: '#a78bfa' },
+        { key: 'postGoLive30Plus', label: 'Post-Go-Live (>30d)', color: '#e9d5ff' },
+        { key: 'unknown', label: 'Unknown Phase', color: '#d1d5db' }
+    ];
+
+    // Create datasets for each phase
+    const datasets = phases.map(phase => ({
+        label: phase.label,
+        data: capacities.map(c => c.phaseCounts[phase.key] || 0),
+        backgroundColor: phase.color,
+        stack: 'Stack 0'
+    }));
+
+    // Calculate max value for capacity zone lines
+    const maxProjects = Math.max(...capacities.map(c => c.totalProjects), 10);
+    const defaultCapacity = capacityConfig.defaultLeadCapacity;
+
+    charts.leadsPhaseChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: capacities.map(c => c.person),
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: ${context.parsed.y} projects`;
+                        },
+                        footer: function(tooltipItems) {
+                            const capacity = capacities[tooltipItems[0].dataIndex];
+                            return [
+                                `Total: ${capacity.totalProjects} projects`,
+                                `Weighted: ${capacity.weightedCapacity} / ${capacity.maxCapacity}`,
+                                `Utilization: ${capacity.utilization}%`
+                            ];
+                        }
+                    }
+                },
+                annotation: {
+                    annotations: {
+                        criticalLine: {
+                            type: 'line',
+                            yMin: defaultCapacity,
+                            yMax: defaultCapacity,
+                            borderColor: 'rgba(239, 68, 68, 0.3)',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            label: {
+                                display: true,
+                                content: `Capacity: ${defaultCapacity}`,
+                                position: 'end'
+                            }
+                        },
+                        criticalZone: {
+                            type: 'box',
+                            yMin: defaultCapacity,
+                            yMax: maxProjects + 2,
+                            backgroundColor: 'rgba(239, 68, 68, 0.05)',
+                            borderWidth: 0
+                        },
+                        warningLine: {
+                            type: 'line',
+                            yMin: defaultCapacity * 0.8,
+                            yMax: defaultCapacity * 0.8,
+                            borderColor: 'rgba(245, 158, 11, 0.3)',
+                            borderWidth: 1,
+                            borderDash: [3, 3]
+                        },
+                        warningZone: {
+                            type: 'box',
+                            yMin: defaultCapacity * 0.8,
+                            yMax: defaultCapacity,
+                            backgroundColor: 'rgba(245, 158, 11, 0.05)',
+                            borderWidth: 0
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    stacked: true,
+                    grid: {
+                        display: false
+                    }
+                },
+                y: {
+                    stacked: true,
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Number of Projects'
+                    },
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)'
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Create specialists phase distribution chart
+function createSpecialistsPhaseChart() {
+    destroyChart('specialistsPhaseChart');
+
+    const specialists = [...new Set(filteredData.map(p => p['OH Specialist(s)']).filter(s => s))];
+    const capacities = specialists.map(person => calculateResourceCapacity(person, 'Specialist'));
+
+    // Sort by total project count descending
+    capacities.sort((a, b) => b.totalProjects - a.totalProjects);
+
+    const ctx = document.getElementById('specialistsPhaseChart');
+    if (!ctx) return;
+
+    // Phase labels and colors (same as leads chart)
+    const phases = [
+        { key: 'preKickoff30Plus', label: 'Pre-Kickoff (>30d)', color: '#e0f2fe' },
+        { key: 'preKickoff0to30', label: 'Pre-Kickoff (0-30d)', color: '#7dd3fc' },
+        { key: 'activePreTesting', label: 'Active Pre-Testing', color: '#2563eb' },
+        { key: 'activeTesting', label: 'Active Testing', color: '#1e40af' },
+        { key: 'activePostTesting', label: 'Active Post-Testing', color: '#8b5cf6' },
+        { key: 'postGoLive0to30', label: 'Post-Go-Live (0-30d)', color: '#a78bfa' },
+        { key: 'postGoLive30Plus', label: 'Post-Go-Live (>30d)', color: '#e9d5ff' },
+        { key: 'unknown', label: 'Unknown Phase', color: '#d1d5db' }
+    ];
+
+    // Create datasets for each phase
+    const datasets = phases.map(phase => ({
+        label: phase.label,
+        data: capacities.map(c => c.phaseCounts[phase.key] || 0),
+        backgroundColor: phase.color,
+        stack: 'Stack 0'
+    }));
+
+    // Calculate max value for capacity zone lines
+    const maxProjects = Math.max(...capacities.map(c => c.totalProjects), 10);
+    const defaultCapacity = capacityConfig.defaultSpecialistCapacity;
+
+    charts.specialistsPhaseChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: capacities.map(c => c.person),
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: ${context.parsed.y} projects`;
+                        },
+                        footer: function(tooltipItems) {
+                            const capacity = capacities[tooltipItems[0].dataIndex];
+                            return [
+                                `Total: ${capacity.totalProjects} projects`,
+                                `Weighted: ${capacity.weightedCapacity} / ${capacity.maxCapacity}`,
+                                `Utilization: ${capacity.utilization}%`
+                            ];
+                        }
+                    }
+                },
+                annotation: {
+                    annotations: {
+                        criticalLine: {
+                            type: 'line',
+                            yMin: defaultCapacity,
+                            yMax: defaultCapacity,
+                            borderColor: 'rgba(239, 68, 68, 0.3)',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            label: {
+                                display: true,
+                                content: `Capacity: ${defaultCapacity}`,
+                                position: 'end'
+                            }
+                        },
+                        criticalZone: {
+                            type: 'box',
+                            yMin: defaultCapacity,
+                            yMax: maxProjects + 2,
+                            backgroundColor: 'rgba(239, 68, 68, 0.05)',
+                            borderWidth: 0
+                        },
+                        warningLine: {
+                            type: 'line',
+                            yMin: defaultCapacity * 0.8,
+                            yMax: defaultCapacity * 0.8,
+                            borderColor: 'rgba(245, 158, 11, 0.3)',
+                            borderWidth: 1,
+                            borderDash: [3, 3]
+                        },
+                        warningZone: {
+                            type: 'box',
+                            yMin: defaultCapacity * 0.8,
+                            yMax: defaultCapacity,
+                            backgroundColor: 'rgba(245, 158, 11, 0.05)',
+                            borderWidth: 0
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    stacked: true,
+                    grid: {
+                        display: false
+                    }
+                },
+                y: {
+                    stacked: true,
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Number of Projects'
+                    },
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)'
                     }
                 }
             }
