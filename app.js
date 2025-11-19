@@ -58,6 +58,41 @@ let filterDebounceTimer = null; // Debounce timer for filter changes
 let isUpdating = false; // Flag to prevent concurrent updates
 let pendingUpdate = false; // Flag to track if an update is pending
 
+/**
+ * Parse specialist field and return the last specialist only.
+ * Format: "Last name, First Name;Last name, First Name"
+ * Returns the last specialist in the list to avoid double-counting projects.
+ * @param {string} specialistField - The OH Specialist(s) field value
+ * @returns {string|null} - The last specialist name or null if empty
+ */
+function getAssignedSpecialist(specialistField) {
+    if (!specialistField || !specialistField.trim()) {
+        return null;
+    }
+
+    // Split on semicolon or comma followed by a capital letter (to handle "Last, First;Last, First" format)
+    // This preserves "Last, First" as a single entity while splitting on semicolons
+    const specialists = specialistField.split(';').map(s => s.trim()).filter(s => s);
+
+    // Return the last specialist in the list
+    return specialists.length > 0 ? specialists[specialists.length - 1] : null;
+}
+
+/**
+ * Get all unique specialists from the specialist field.
+ * This is used for dropdown/filter population only.
+ * @param {string} specialistField - The OH Specialist(s) field value
+ * @returns {Array<string>} - Array of all specialist names
+ */
+function getAllSpecialistsFromField(specialistField) {
+    if (!specialistField || !specialistField.trim()) {
+        return [];
+    }
+
+    // Split on semicolon to get all specialists
+    return specialistField.split(';').map(s => s.trim()).filter(s => s);
+}
+
 // Determine project phase based on dates
 function determineProjectPhase(project) {
     const now = new Date();
@@ -673,7 +708,9 @@ function updateMetrics() {
 
         // Unique leads and specialists
         if (p['OH Project Lead']) uniqueLeads.add(p['OH Project Lead']);
-        if (p['OH Specialist(s)']) uniqueSpecialists.add(p['OH Specialist(s)']);
+        // Get all unique specialists from the field for counting purposes
+        const allSpecialistsInField = getAllSpecialistsFromField(p['OH Specialist(s)']);
+        allSpecialistsInField.forEach(specialist => uniqueSpecialists.add(specialist));
 
         // Projects without lead
         if (!p['OH Project Lead'] || p['OH Project Lead'].trim() === '') {
@@ -1035,13 +1072,10 @@ function createSpecialistWorkloadChart() {
 
     const specialistCounts = {};
     filteredData.forEach(project => {
-        const specialists = project['OH Specialist(s)'];
-        if (specialists) {
-            // Handle multiple specialists separated by semicolon or comma
-            const specialistList = specialists.split(/[;,]/).map(s => s.trim()).filter(s => s);
-            specialistList.forEach(specialist => {
-                specialistCounts[specialist] = (specialistCounts[specialist] || 0) + 1;
-            });
+        // Attribute project to only the last specialist to avoid double-counting
+        const assignedSpecialist = getAssignedSpecialist(project['OH Specialist(s)']);
+        if (assignedSpecialist) {
+            specialistCounts[assignedSpecialist] = (specialistCounts[assignedSpecialist] || 0) + 1;
         }
     });
 
@@ -1094,11 +1128,9 @@ function populateLeadTimelineSelect() {
 function populateSpecialistTimelineSelect() {
     const specialistSet = new Set();
     filteredData.forEach(project => {
-        const specialists = project['OH Specialist(s)'];
-        if (specialists) {
-            const specialistList = specialists.split(/[;,]/).map(s => s.trim()).filter(s => s);
-            specialistList.forEach(s => specialistSet.add(s));
-        }
+        // Get all specialists to populate the dropdown (for filtering purposes)
+        const allSpecialists = getAllSpecialistsFromField(project['OH Specialist(s)']);
+        allSpecialists.forEach(s => specialistSet.add(s));
     });
     const specialists = [...specialistSet].sort();
     const select = document.getElementById('specialistTimelineSelect');
@@ -1340,31 +1372,29 @@ function createSpecialistTimelineChart() {
         specialistTestingData[specialist] = [];
 
         filteredData.forEach(project => {
-            const specialists = project['OH Specialist(s)'];
-            if (specialists) {
-                const specialistList = specialists.split(/[;,]/).map(s => s.trim()).filter(s => s);
-                if (specialistList.includes(specialist)) {
-                    // Project lifecycle data
-                    const kickOff = parseDateCached(project['Kick-Off Date'], project.__id);
-                    const goLive = parseDateCached(project['OH Go-Live Date'], project.__id);
-                    if (kickOff && goLive) {
-                        specialistProjectData[specialist].push({
-                            kickOff: kickOff,
-                            goLive: goLive,
-                            project: project
-                        });
-                    }
+            // Only count project if this specialist is the assigned specialist (last in the list)
+            const assignedSpecialist = getAssignedSpecialist(project['OH Specialist(s)']);
+            if (assignedSpecialist === specialist) {
+                // Project lifecycle data
+                const kickOff = parseDateCached(project['Kick-Off Date'], project.__id);
+                const goLive = parseDateCached(project['OH Go-Live Date'], project.__id);
+                if (kickOff && goLive) {
+                    specialistProjectData[specialist].push({
+                        kickOff: kickOff,
+                        goLive: goLive,
+                        project: project
+                    });
+                }
 
-                    // Testing phase data
-                    const testStart = parseDateCached(project['Testing Start'], project.__id);
-                    const testEnd = parseDateCached(project['Testing End'], project.__id);
-                    if (testStart && testEnd) {
-                        specialistTestingData[specialist].push({
-                            testStart: testStart,
-                            testEnd: testEnd,
-                            project: project
-                        });
-                    }
+                // Testing phase data
+                const testStart = parseDateCached(project['Testing Start'], project.__id);
+                const testEnd = parseDateCached(project['Testing End'], project.__id);
+                if (testStart && testEnd) {
+                    specialistTestingData[specialist].push({
+                        testStart: testStart,
+                        testEnd: testEnd,
+                        project: project
+                    });
                 }
             }
         });
@@ -3020,26 +3050,24 @@ function updateSidePanelContent() {
         const selectedSpecialists = Array.from(document.getElementById('specialistTimelineSelect').selectedOptions).map(opt => opt.value);
 
         filteredData.forEach(p => {
-            const specialists = p['OH Specialist(s)'];
-            if (specialists) {
-                const specialistList = specialists.split(/[;,]/).map(s => s.trim()).filter(s => s);
-                const hasSelectedSpecialist = specialistList.some(s => selectedSpecialists.includes(s));
+            // Only include project if the assigned specialist (last in list) is selected
+            const assignedSpecialist = getAssignedSpecialist(p['OH Specialist(s)']);
+            const hasSelectedSpecialist = assignedSpecialist && selectedSpecialists.includes(assignedSpecialist);
 
-                if (hasSelectedSpecialist) {
-                    if (timelineType === 'project' || timelineType === 'both') {
-                        const kickOff = parseDateCached(p['Kick-Off Date'], p.__id);
-                        const goLive = parseDateCached(p['OH Go-Live Date'], p.__id);
-                        if (kickOff && goLive && kickOff <= monthEnd && goLive >= month) {
-                            activeProjects.push(p);
-                        }
+            if (hasSelectedSpecialist) {
+                if (timelineType === 'project' || timelineType === 'both') {
+                    const kickOff = parseDateCached(p['Kick-Off Date'], p.__id);
+                    const goLive = parseDateCached(p['OH Go-Live Date'], p.__id);
+                    if (kickOff && goLive && kickOff <= monthEnd && goLive >= month) {
+                        activeProjects.push(p);
                     }
+                }
 
-                    if (timelineType === 'testing' || timelineType === 'both') {
-                        const testStart = parseDateCached(p['Testing Start'], p.__id);
-                        const testEnd = parseDateCached(p['Testing End'], p.__id);
-                        if (testStart && testEnd && testStart <= monthEnd && testEnd >= month) {
-                            testingProjects.push(p);
-                        }
+                if (timelineType === 'testing' || timelineType === 'both') {
+                    const testStart = parseDateCached(p['Testing Start'], p.__id);
+                    const testEnd = parseDateCached(p['Testing End'], p.__id);
+                    if (testStart && testEnd && testStart <= monthEnd && testEnd >= month) {
+                        testingProjects.push(p);
                     }
                 }
             }
@@ -3290,7 +3318,9 @@ function showAddOverrideModal() {
     const allPeople = new Set();
     filteredData.forEach(p => {
         if (p['OH Project Lead']) allPeople.add(p['OH Project Lead']);
-        if (p['OH Specialist(s)']) allPeople.add(p['OH Specialist(s)']);
+        // Get all unique specialists (not just the assigned one)
+        const allSpecialists = getAllSpecialistsFromField(p['OH Specialist(s)']);
+        allSpecialists.forEach(s => allPeople.add(s));
     });
 
     select.innerHTML = '<option value="">-- Select Person --</option>' +
@@ -3376,7 +3406,8 @@ function calculateResourceCapacity(person, role) {
     // Get all projects for this person (not just active, to see all phases)
     const personProjects = filteredData.filter(p => {
         const isLead = p['OH Project Lead'] === person;
-        const isSpecialist = p['OH Specialist(s)'] === person;
+        const assignedSpecialist = getAssignedSpecialist(p['OH Specialist(s)']);
+        const isSpecialist = assignedSpecialist === person;
 
         return (isLead || isSpecialist);
     });
@@ -3507,7 +3538,14 @@ function renderCapacityMetrics() {
 
     // Calculate all resource capacities
     const leads = [...new Set(filteredData.map(p => p['OH Project Lead']).filter(l => l))];
-    const specialists = [...new Set(filteredData.map(p => p['OH Specialist(s)']).filter(s => s))];
+
+    // Get all unique specialists (from all fields, not just assigned ones)
+    const specialistSet = new Set();
+    filteredData.forEach(p => {
+        const allSpecialists = getAllSpecialistsFromField(p['OH Specialist(s)']);
+        allSpecialists.forEach(s => specialistSet.add(s));
+    });
+    const specialists = [...specialistSet];
 
     const leadCapacities = leads.map(lead => calculateResourceCapacity(lead, 'Lead'));
     const specialistCapacities = specialists.map(spec => calculateResourceCapacity(spec, 'Specialist'));
@@ -3546,7 +3584,14 @@ function renderCapacityCards() {
 
     // Calculate all resource capacities
     const leads = [...new Set(filteredData.map(p => p['OH Project Lead']).filter(l => l))];
-    const specialists = [...new Set(filteredData.map(p => p['OH Specialist(s)']).filter(s => s))];
+
+    // Get all unique specialists (from all fields, not just assigned ones)
+    const specialistSet = new Set();
+    filteredData.forEach(p => {
+        const allSpecialists = getAllSpecialistsFromField(p['OH Specialist(s)']);
+        allSpecialists.forEach(s => specialistSet.add(s));
+    });
+    const specialists = [...specialistSet];
 
     const leadCapacities = leads.map(lead => calculateResourceCapacity(lead, 'Lead'));
     const specialistCapacities = specialists.map(spec => calculateResourceCapacity(spec, 'Specialist'));
@@ -3690,7 +3735,14 @@ function createCapacityUtilizationChart() {
 
     // Calculate all resource capacities
     const leads = [...new Set(filteredData.map(p => p['OH Project Lead']).filter(l => l))];
-    const specialists = [...new Set(filteredData.map(p => p['OH Specialist(s)']).filter(s => s))];
+
+    // Get all unique specialists (from all fields, not just assigned ones)
+    const specialistSet = new Set();
+    filteredData.forEach(p => {
+        const allSpecialists = getAllSpecialistsFromField(p['OH Specialist(s)']);
+        allSpecialists.forEach(s => specialistSet.add(s));
+    });
+    const specialists = [...specialistSet];
 
     const allPeople = [...leads, ...specialists];
     const capacities = allPeople.map(person => {
@@ -3904,7 +3956,13 @@ function createLeadsPhaseChart() {
 function createSpecialistsPhaseChart() {
     destroyChart('specialistsPhaseChart');
 
-    const specialists = [...new Set(filteredData.map(p => p['OH Specialist(s)']).filter(s => s))];
+    // Get all unique specialists (from all fields, not just assigned ones)
+    const specialistSet = new Set();
+    filteredData.forEach(p => {
+        const allSpecialists = getAllSpecialistsFromField(p['OH Specialist(s)']);
+        allSpecialists.forEach(s => specialistSet.add(s));
+    });
+    const specialists = [...specialistSet];
     const capacities = specialists.map(person => calculateResourceCapacity(person, 'Specialist'));
 
     // Sort by total project count descending
