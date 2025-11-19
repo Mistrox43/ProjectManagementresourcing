@@ -453,6 +453,7 @@ function initializeDashboard() {
 // Render content for active tab
 function renderTabContent(tabName) {
     if (tabName === 'current-status') {
+        createPhaseDistribution();
         createLeadWorkloadChart();
         createSpecialistWorkloadChart();
         createRegionChart();
@@ -1081,6 +1082,11 @@ function createLeadWorkloadChart() {
                     ticks: {
                         stepSize: 1
                     }
+                },
+                y: {
+                    ticks: {
+                        autoSkip: false
+                    }
                 }
             }
         }
@@ -1130,10 +1136,74 @@ function createSpecialistWorkloadChart() {
                     ticks: {
                         stepSize: 1
                     }
+                },
+                y: {
+                    ticks: {
+                        autoSkip: false
+                    }
                 }
             }
         }
     });
+}
+
+// Create Lifecycle Phase Distribution
+function createPhaseDistribution() {
+    // Define phases with labels and colors
+    const phases = [
+        { key: 'preKickoff30Plus', label: 'Pre-Kickoff (>30d)', color: '#e0f2fe' },
+        { key: 'preKickoff0to30', label: 'Pre-Kickoff (0-30d)', color: '#7dd3fc' },
+        { key: 'activePreTesting', label: 'Active Pre-Testing', color: '#2563eb' },
+        { key: 'activeTesting', label: 'Active Testing', color: '#1e40af' },
+        { key: 'activePostTesting', label: 'Active Post-Testing', color: '#8b5cf6' },
+        { key: 'postGoLive0to30', label: 'Post-Go-Live (0-30d)', color: '#a78bfa' },
+        { key: 'postGoLive30Plus', label: 'Post-Go-Live (>30d)', color: '#e9d5ff' },
+        { key: 'unknown', label: 'Unknown Phase', color: '#d1d5db' }
+    ];
+
+    // Count projects by phase
+    const phaseCounts = {};
+    const phaseProjects = {};
+    phases.forEach(phase => {
+        phaseCounts[phase.key] = 0;
+        phaseProjects[phase.key] = [];
+    });
+
+    filteredData.forEach(project => {
+        const phaseInfo = determineProjectPhase(project);
+        const phaseKey = phaseInfo.phase;
+
+        if (phaseCounts.hasOwnProperty(phaseKey)) {
+            phaseCounts[phaseKey]++;
+            phaseProjects[phaseKey].push(project);
+        } else {
+            // If phase not recognized, count as unknown
+            phaseCounts['unknown']++;
+            phaseProjects['unknown'].push(project);
+        }
+    });
+
+    // Generate HTML for phase bars
+    const container = document.getElementById('phaseBarsContainer');
+    if (!container) return;
+
+    container.innerHTML = phases.map(phase => {
+        const count = phaseCounts[phase.key];
+        return `
+            <div class="phase-bar-item ${count > 0 ? 'phase-bar-clickable' : ''}"
+                 data-phase="${phase.key}"
+                 onclick="${count > 0 ? `openPhasePanel('${phase.key}', '${phase.label}')` : ''}"
+                 style="cursor: ${count > 0 ? 'pointer' : 'default'};">
+                <div class="phase-bar" style="background-color: ${phase.color};">
+                    <div class="phase-bar-count">${count}</div>
+                </div>
+                <div class="phase-bar-label">${phase.label}</div>
+            </div>
+        `;
+    }).join('');
+
+    // Store phase projects globally for panel access
+    window.phaseProjectsData = phaseProjects;
 }
 
 // Populate Lead Timeline Select
@@ -2267,6 +2337,24 @@ function navigatePeriod(direction) {
     }
 }
 
+// Open Phase Panel
+function openPhasePanel(phaseKey, phaseLabel) {
+    sidePanelState = {
+        isOpen: true,
+        chartType: 'lifecycle-phase',
+        phaseKey: phaseKey,
+        phaseLabel: phaseLabel,
+        monthIndex: 0,
+        allMonths: [],
+        chartData: null
+    };
+
+    document.getElementById('sidePanel').classList.add('open');
+    document.getElementById('sidePanelOverlay').classList.add('open');
+
+    updateSidePanelContent();
+}
+
 // Update Side Panel Content
 function updateSidePanelContent() {
     // Handle missing dates panel separately
@@ -2874,6 +2962,116 @@ function updateSidePanelContent() {
                                     </div>
                                 ` : '<div>Go-Live: Missing</div>'}
                             </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('panelProjects').innerHTML = projectsHTML;
+        }
+        return;
+    }
+
+    // Handle lifecycle-phase panel
+    if (sidePanelState.chartType === 'lifecycle-phase') {
+        const { phaseKey, phaseLabel } = sidePanelState;
+        document.getElementById('panelTitle').textContent = `Projects in ${phaseLabel}`;
+        document.querySelector('.panel-navigation').style.display = 'none';
+
+        // Get projects for this phase
+        const phaseProjects = window.phaseProjectsData && window.phaseProjectsData[phaseKey]
+            ? window.phaseProjectsData[phaseKey]
+            : [];
+
+        // Update summary stats
+        const summaryHTML = `
+            <div class="panel-stat">
+                <div class="panel-stat-label">Total Projects</div>
+                <div class="panel-stat-value">${phaseProjects.length}</div>
+            </div>
+            <div class="panel-stat">
+                <div class="panel-stat-label">Phase</div>
+                <div class="panel-stat-value">${phaseLabel}</div>
+            </div>
+        `;
+        document.getElementById('panelSummary').innerHTML = summaryHTML;
+
+        // Display projects
+        if (phaseProjects.length === 0) {
+            document.getElementById('panelProjects').innerHTML = `
+                <div class="panel-empty">
+                    <div class="panel-empty-icon">✓</div>
+                    <p>No projects in this phase!</p>
+                </div>
+            `;
+        } else {
+            const projectsHTML = phaseProjects.map(project => {
+                const facilityName = project['Facility Name'] || 'Unknown Facility';
+                const projectShortName = project['Project Short Name'] || '';
+                const projectType = project['Project Type'] || 'N/A';
+                const region = project['OH Region'] || 'Unknown';
+                const lob = project['LOB'] || 'Unknown';
+                const projectLead = project['OH Project Lead'] || 'Not Assigned';
+                const specialist = project['OH Specialist(s)'] || 'Not Assigned';
+                const status = project['Project Status'] || 'Unknown';
+
+                const kickOffDate = parseDateCached(project['Kick-Off Date'], project.__id);
+                const testStartDate = parseDateCached(project['Testing Start'], project.__id);
+                const testEndDate = parseDateCached(project['Testing End'], project.__id);
+                const goLiveDate = parseDateCached(project['OH Go-Live Date'], project.__id);
+
+                const statusClass = getStatusClass(status);
+
+                const hasProjectDates = kickOffDate && goLiveDate;
+                const hasTestingDates = testStartDate && testEndDate;
+
+                return `
+                    <div class="project-card">
+                        <div class="project-card-header">
+                            <h4 class="project-name">${facilityName}</h4>
+                            <span class="status-badge ${statusClass}">${status}</span>
+                        </div>
+                        <div class="project-card-body">
+                            ${projectShortName ? `<div class="project-info-row">
+                                <span class="project-info-label">Project:</span>
+                                <span class="project-info-value">${projectShortName}</span>
+                            </div>` : ''}
+                            <div class="project-info-row">
+                                <span class="project-info-label">Type:</span>
+                                <span class="project-info-value">${projectType}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Region:</span>
+                                <span class="project-info-value">${region}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">LOB:</span>
+                                <span class="project-info-value">${lob}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Lead:</span>
+                                <span class="project-info-value">${projectLead}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Specialist:</span>
+                                <span class="project-info-value">${specialist}</span>
+                            </div>
+                        </div>
+                        <div class="project-timeline">
+                            ${hasProjectDates ? `
+                                <div class="timeline-bar">
+                                    <span class="timeline-label">Project:</span>
+                                    <div class="timeline-visual"></div>
+                                    <span class="timeline-dates">${formatDate(kickOffDate)} - ${formatDate(goLiveDate)}</span>
+                                </div>
+                            ` : ''}
+                            ${hasTestingDates ? `
+                                <div class="timeline-bar">
+                                    <span class="timeline-label">Testing:</span>
+                                    <div class="timeline-visual" style="background: linear-gradient(90deg, var(--warning-color), var(--success-color));"></div>
+                                    <span class="timeline-dates">${formatDate(testStartDate)} - ${formatDate(testEndDate)}</span>
+                                </div>
+                            ` : ''}
                         </div>
                     </div>
                 `;
