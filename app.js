@@ -3022,6 +3022,9 @@ function updateSidePanelContent() {
 
                 const statusClass = getStatusClass(status);
 
+                const hasProjectDates = kickOffDate && goLiveDate;
+                const hasTestingDates = testStartDate && testEndDate;
+
                 return `
                     <div class="project-card">
                         <div class="project-card-header">
@@ -3054,11 +3057,21 @@ function updateSidePanelContent() {
                                 <span class="project-info-value">${specialist}</span>
                             </div>
                         </div>
-                        <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); font-size: 0.875rem;">
-                            ${kickOffDate ? `<div style="margin-bottom: 0.25rem;">Kick-Off: <strong>${formatDate(kickOffDate)}</strong></div>` : '<div style="margin-bottom: 0.25rem; color: var(--text-secondary);">Kick-Off: Not Set</div>'}
-                            ${testStartDate ? `<div style="margin-bottom: 0.25rem;">Testing Start: <strong>${formatDate(testStartDate)}</strong></div>` : ''}
-                            ${testEndDate ? `<div style="margin-bottom: 0.25rem;">Testing End: <strong>${formatDate(testEndDate)}</strong></div>` : ''}
-                            ${goLiveDate ? `<div>Go-Live: <strong>${formatDate(goLiveDate)}</strong></div>` : '<div style="color: var(--text-secondary);">Go-Live: Not Set</div>'}
+                        <div class="project-timeline">
+                            ${hasProjectDates ? `
+                                <div class="timeline-bar">
+                                    <span class="timeline-label">Project:</span>
+                                    <div class="timeline-visual"></div>
+                                    <span class="timeline-dates">${formatDate(kickOffDate)} - ${formatDate(goLiveDate)}</span>
+                                </div>
+                            ` : ''}
+                            ${hasTestingDates ? `
+                                <div class="timeline-bar">
+                                    <span class="timeline-label">Testing:</span>
+                                    <div class="timeline-visual" style="background: linear-gradient(90deg, var(--warning-color), var(--success-color));"></div>
+                                    <span class="timeline-dates">${formatDate(testStartDate)} - ${formatDate(testEndDate)}</span>
+                                </div>
+                            ` : ''}
                         </div>
                     </div>
                 `;
