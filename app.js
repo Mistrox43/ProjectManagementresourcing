@@ -1081,6 +1081,11 @@ function createLeadWorkloadChart() {
                     ticks: {
                         stepSize: 1
                     }
+                },
+                y: {
+                    ticks: {
+                        autoSkip: false
+                    }
                 }
             }
         }
@@ -1129,6 +1134,11 @@ function createSpecialistWorkloadChart() {
                     beginAtZero: true,
                     ticks: {
                         stepSize: 1
+                    }
+                },
+                y: {
+                    ticks: {
+                        autoSkip: false
                     }
                 }
             }
