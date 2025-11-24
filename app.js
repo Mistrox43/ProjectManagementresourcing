@@ -3755,6 +3755,8 @@ function renderCapacityPlanning() {
     renderCapacityCards();
     createLeadsPhaseChart();
     createSpecialistsPhaseChart();
+    createCapacityUtilizationTimeline();
+    createPhaseCapacityStackedArea();
 }
 
 // Render capacity metrics
@@ -4310,4 +4312,672 @@ function createSpecialistsPhaseChart() {
             }
         }
     });
+}
+
+// ========================================
+// NEW: Capacity Utilization Over Time Visualizations
+// ========================================
+
+// Global variables to store chart instances and current view state
+let capacityUtilizationTimelineChart = null;
+let phaseCapacityStackedAreaChart = null;
+let capacityTimelineViewMode = 'aggregate'; // 'aggregate' or 'individual'
+let phaseCapacityViewMode = 'aggregate'; // 'aggregate' or 'individual'
+let selectedCapacityTimelineIndividuals = { leads: [], specialists: [] };
+let selectedPhaseCapacityIndividuals = { leads: [], specialists: [] };
+
+// Calculate capacity data over time for all resources
+function calculateCapacityOverTime(projects, startDate, endDate, granularity = 'week') {
+    const timePoints = [];
+    const current = new Date(startDate);
+
+    // Generate time points based on granularity
+    while (current <= endDate) {
+        timePoints.push(new Date(current));
+        if (granularity === 'day') {
+            current.setDate(current.getDate() + 1);
+        } else if (granularity === 'week') {
+            current.setDate(current.getDate() + 7);
+        } else { // month
+            current.setMonth(current.getMonth() + 1);
+        }
+    }
+
+    // Get all unique resources
+    const leads = [...new Set(projects.map(p => p['OH Project Lead']).filter(l => l))];
+    const specialistSet = new Set();
+    projects.forEach(project => {
+        const specialists = getAllSpecialistsFromField(project['OH Specialist(s)']);
+        specialists.forEach(s => specialistSet.add(s));
+    });
+    const specialists = [...specialistSet];
+
+    // Calculate capacity for each resource at each time point
+    const capacityData = {};
+
+    // Initialize data structure
+    [...leads, ...specialists].forEach(person => {
+        capacityData[person] = {
+            role: leads.includes(person) ? 'Lead' : 'Specialist',
+            timePoints: [],
+            utilization: [],
+            phaseBreakdown: []
+        };
+    });
+
+    // For each time point, calculate capacity as if we're looking at that date
+    timePoints.forEach(timePoint => {
+        // Filter projects that would be active/relevant at this time point
+        const relevantProjects = projects.filter(project => {
+            const phase = determineProjectPhase(project);
+            // Exclude closed projects and date errors
+            if (phase.phase === 'closed' || phase.phase === 'dateError') {
+                return false;
+            }
+
+            // Check if project is relevant at this time point
+            const kickOffDate = parseDateCached(project['Kick-Off Date'], project.__id);
+            const goLiveDate = parseDateCached(project['OH Go-Live Date'], project.__id);
+
+            // Include if: no kick-off date (unknown) OR kick-off is within 90 days before timePoint OR project is between kickoff and 60 days after go-live
+            if (!kickOffDate) return true; // Unknown phase projects
+
+            const ninetyDaysBeforeTimePoint = new Date(timePoint.getTime() - (90 * 24 * 60 * 60 * 1000));
+            const sixtyDaysAfterGoLive = goLiveDate ? new Date(goLiveDate.getTime() + (60 * 24 * 60 * 60 * 1000)) : null;
+
+            if (kickOffDate <= timePoint) {
+                // Project has started
+                if (sixtyDaysAfterGoLive && timePoint <= sixtyDaysAfterGoLive) {
+                    return true; // Still in post-go-live window
+                } else if (!goLiveDate) {
+                    return true; // No go-live date, include it
+                }
+            } else if (kickOffDate > ninetyDaysBeforeTimePoint && kickOffDate <= new Date(timePoint.getTime() + (90 * 24 * 60 * 60 * 1000))) {
+                return true; // Pre-kickoff window
+            }
+
+            return false;
+        });
+
+        // Calculate capacity for each person at this time point
+        leads.forEach(lead => {
+            const leadProjects = relevantProjects.filter(p => p['OH Project Lead'] === lead);
+            const capacity = calculateResourceCapacityForProjects(lead, 'Lead', leadProjects, timePoint);
+
+            capacityData[lead].timePoints.push(timePoint);
+            capacityData[lead].utilization.push(capacity.utilization);
+            capacityData[lead].phaseBreakdown.push(capacity.phaseBreakdown);
+        });
+
+        specialists.forEach(specialist => {
+            const specialistProjects = relevantProjects.filter(p => {
+                const projectSpecialists = getAllSpecialistsFromField(p['OH Specialist(s)']);
+                return projectSpecialists.includes(specialist);
+            });
+            const capacity = calculateResourceCapacityForProjects(specialist, 'Specialist', specialistProjects, timePoint);
+
+            capacityData[specialist].timePoints.push(timePoint);
+            capacityData[specialist].utilization.push(capacity.utilization);
+            capacityData[specialist].phaseBreakdown.push(capacity.phaseBreakdown);
+        });
+    });
+
+    return { capacityData, timePoints, leads, specialists };
+}
+
+// Helper function to calculate capacity for a specific person and project list at a given time point
+function calculateResourceCapacityForProjects(person, role, projects, atDate) {
+    const maxCapacity = capacityConfig.individualOverrides[person]?.capacity ||
+                       (role === 'Lead' ? capacityConfig.defaultLeadCapacity : capacityConfig.defaultSpecialistCapacity);
+
+    const phaseBreakdown = {
+        preKickoff30Plus: [],
+        preKickoff0to30: [],
+        activePreTesting: [],
+        activeTesting: [],
+        activePostTesting: [],
+        postGoLive0to30: [],
+        postGoLive30Plus: [],
+        unknown: []
+    };
+
+    let weightedCapacity = 0;
+
+    projects.forEach(project => {
+        // Temporarily override "now" for phase determination
+        const originalNow = Date.now;
+        Date.now = () => atDate.getTime();
+
+        const phaseInfo = determineProjectPhase(project);
+        const phase = phaseInfo.phase;
+
+        // Restore original Date.now
+        Date.now = originalNow;
+
+        if (phase === 'closed' || phase === 'dateError') return;
+
+        if (phaseBreakdown.hasOwnProperty(phase)) {
+            phaseBreakdown[phase].push(project);
+        } else {
+            phaseBreakdown.unknown.push(project);
+        }
+
+        // Calculate weighted capacity
+        const weight = role === 'Lead' ?
+            capacityConfig.phaseWeights.lead[phase] || 0 :
+            capacityConfig.phaseWeights.specialist[phase] || 0;
+
+        weightedCapacity += weight / 100;
+    });
+
+    const utilization = maxCapacity > 0 ? (weightedCapacity / maxCapacity) * 100 : 0;
+
+    return {
+        utilization,
+        weightedCapacity,
+        maxCapacity,
+        phaseBreakdown
+    };
+}
+
+// OPTION 1: Capacity Utilization Timeline
+function createCapacityUtilizationTimeline() {
+    const canvas = document.getElementById('capacityUtilizationTimelineChart');
+    if (!canvas) return;
+
+    // Destroy existing chart
+    if (capacityUtilizationTimelineChart) {
+        capacityUtilizationTimelineChart.destroy();
+    }
+
+    // Calculate date range (90 days before earliest kickoff to 90 days after latest go-live)
+    let minDate = new Date();
+    let maxDate = new Date();
+
+    filteredData.forEach(project => {
+        const kickOff = parseDateCached(project['Kick-Off Date'], project.__id);
+        const goLive = parseDateCached(project['OH Go-Live Date'], project.__id);
+
+        if (kickOff && kickOff < minDate) minDate = kickOff;
+        if (goLive && goLive > maxDate) maxDate = goLive;
+    });
+
+    const startDate = new Date(minDate.getTime() - (90 * 24 * 60 * 60 * 1000));
+    const endDate = new Date(maxDate.getTime() + (90 * 24 * 60 * 60 * 1000));
+
+    // Calculate capacity over time
+    const { capacityData, timePoints, leads, specialists } = calculateCapacityOverTime(filteredData, startDate, endDate, 'week');
+
+    // Populate individual selection checkboxes
+    populateIndividualCheckboxes('capacityTimeline', leads, specialists);
+
+    // Prepare chart data based on view mode
+    let datasets = [];
+
+    if (capacityTimelineViewMode === 'aggregate') {
+        // Aggregate by role
+        const leadUtilizations = timePoints.map((tp, idx) => {
+            const totalUtil = leads.reduce((sum, lead) => sum + capacityData[lead].utilization[idx], 0);
+            return leads.length > 0 ? totalUtil / leads.length : 0;
+        });
+
+        const specialistUtilizations = timePoints.map((tp, idx) => {
+            const totalUtil = specialists.reduce((sum, spec) => sum + capacityData[spec].utilization[idx], 0);
+            return specialists.length > 0 ? totalUtil / specialists.length : 0;
+        });
+
+        datasets = [
+            {
+                label: 'Project Leads (Avg)',
+                data: leadUtilizations,
+                borderColor: '#10b981',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.4
+            },
+            {
+                label: 'Specialists (Avg)',
+                data: specialistUtilizations,
+                borderColor: '#f59e0b',
+                backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.4
+            }
+        ];
+    } else {
+        // Individual view
+        const selectedLeads = selectedCapacityTimelineIndividuals.leads;
+        const selectedSpecialists = selectedCapacityTimelineIndividuals.specialists;
+
+        // If no individuals selected, show first 5 of each role
+        const leadsToShow = selectedLeads.length > 0 ? selectedLeads : leads.slice(0, 5);
+        const specialistsToShow = selectedSpecialists.length > 0 ? selectedSpecialists : specialists.slice(0, 5);
+
+        const colors = [
+            '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+            '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'
+        ];
+
+        leadsToShow.forEach((lead, idx) => {
+            datasets.push({
+                label: `${lead} (Lead)`,
+                data: capacityData[lead].utilization,
+                borderColor: colors[idx % colors.length],
+                backgroundColor: colors[idx % colors.length] + '20',
+                borderWidth: 2,
+                fill: false,
+                tension: 0.4
+            });
+        });
+
+        specialistsToShow.forEach((spec, idx) => {
+            datasets.push({
+                label: `${spec} (Specialist)`,
+                data: capacityData[spec].utilization,
+                borderColor: colors[(idx + leadsToShow.length) % colors.length],
+                backgroundColor: colors[(idx + leadsToShow.length) % colors.length] + '20',
+                borderWidth: 2,
+                fill: false,
+                tension: 0.4,
+                borderDash: [5, 5]
+            });
+        });
+    }
+
+    // Create chart
+    const ctx = canvas.getContext('2d');
+    capacityUtilizationTimelineChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: timePoints.map(tp => tp.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })),
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            aspectRatio: 2.5,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: ${context.parsed.y.toFixed(1)}%`;
+                        }
+                    }
+                },
+                annotation: {
+                    annotations: {
+                        warningLine: {
+                            type: 'line',
+                            yMin: capacityConfig.alertThreshold,
+                            yMax: capacityConfig.alertThreshold,
+                            borderColor: '#f59e0b',
+                            borderWidth: 2,
+                            borderDash: [10, 5],
+                            label: {
+                                content: 'High Load Threshold',
+                                enabled: true,
+                                position: 'end'
+                            }
+                        },
+                        criticalLine: {
+                            type: 'line',
+                            yMin: 100,
+                            yMax: 100,
+                            borderColor: '#ef4444',
+                            borderWidth: 2,
+                            borderDash: [10, 5],
+                            label: {
+                                content: 'Critical Capacity',
+                                enabled: true,
+                                position: 'end'
+                            }
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: {
+                        display: false
+                    },
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 45
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Capacity Utilization (%)'
+                    },
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)'
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return value + '%';
+                        }
+                    }
+                }
+            },
+            interaction: {
+                mode: 'nearest',
+                axis: 'x',
+                intersect: false
+            }
+        }
+    });
+}
+
+// OPTION 2: Phase Capacity Stacked Area Chart
+function createPhaseCapacityStackedArea() {
+    const canvas = document.getElementById('phaseCapacityStackedAreaChart');
+    if (!canvas) return;
+
+    // Destroy existing chart
+    if (phaseCapacityStackedAreaChart) {
+        phaseCapacityStackedAreaChart.destroy();
+    }
+
+    // Calculate date range
+    let minDate = new Date();
+    let maxDate = new Date();
+
+    filteredData.forEach(project => {
+        const kickOff = parseDateCached(project['Kick-Off Date'], project.__id);
+        const goLive = parseDateCached(project['OH Go-Live Date'], project.__id);
+
+        if (kickOff && kickOff < minDate) minDate = kickOff;
+        if (goLive && goLive > maxDate) maxDate = goLive;
+    });
+
+    const startDate = new Date(minDate.getTime() - (90 * 24 * 60 * 60 * 1000));
+    const endDate = new Date(maxDate.getTime() + (90 * 24 * 60 * 60 * 1000));
+
+    // Calculate capacity over time
+    const { capacityData, timePoints, leads, specialists } = calculateCapacityOverTime(filteredData, startDate, endDate, 'week');
+
+    // Populate individual selection checkboxes
+    populateIndividualCheckboxes('phaseCapacity', leads, specialists);
+
+    // Define phases to display
+    const phases = [
+        { key: 'preKickoff30Plus', label: 'Pre-Kickoff (>30d)', color: '#e0f2fe' },
+        { key: 'preKickoff0to30', label: 'Pre-Kickoff (0-30d)', color: '#7dd3fc' },
+        { key: 'activePreTesting', label: 'Active Pre-Testing', color: '#2563eb' },
+        { key: 'activeTesting', label: 'Active Testing', color: '#1e40af' },
+        { key: 'activePostTesting', label: 'Active Post-Testing', color: '#8b5cf6' },
+        { key: 'postGoLive0to30', label: 'Post-Go-Live (0-30d)', color: '#a78bfa' },
+        { key: 'postGoLive30Plus', label: 'Post-Go-Live (>30d)', color: '#e9d5ff' },
+        { key: 'unknown', label: 'Unknown Phase', color: '#d1d5db' }
+    ];
+
+    // Prepare datasets based on view mode
+    let datasets = [];
+
+    if (phaseCapacityViewMode === 'aggregate') {
+        // Aggregate by role - show phase breakdown
+        // We'll calculate total weighted capacity for all leads/specialists combined
+        const peopleToAggregate = [...leads, ...specialists];
+
+        phases.forEach(phase => {
+            const phaseData = timePoints.map((tp, idx) => {
+                let totalCapacity = 0;
+                peopleToAggregate.forEach(person => {
+                    const phaseProjects = capacityData[person].phaseBreakdown[idx]?.[phase.key] || [];
+                    const role = capacityData[person].role;
+                    const weight = role === 'Lead' ?
+                        capacityConfig.phaseWeights.lead[phase.key] || 0 :
+                        capacityConfig.phaseWeights.specialist[phase.key] || 0;
+                    totalCapacity += (phaseProjects.length * weight) / 100;
+                });
+                return totalCapacity;
+            });
+
+            datasets.push({
+                label: phase.label,
+                data: phaseData,
+                backgroundColor: phase.color,
+                borderColor: phase.color,
+                borderWidth: 1,
+                fill: true
+            });
+        });
+    } else {
+        // Individual view - show total capacity per person (not broken down by phase)
+        const selectedLeads = selectedPhaseCapacityIndividuals.leads;
+        const selectedSpecialists = selectedPhaseCapacityIndividuals.specialists;
+
+        // If no individuals selected, show first 3 of each role
+        const leadsToShow = selectedLeads.length > 0 ? selectedLeads : leads.slice(0, 3);
+        const specialistsToShow = selectedSpecialists.length > 0 ? selectedSpecialists : specialists.slice(0, 3);
+
+        const colors = [
+            '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
+        ];
+
+        leadsToShow.forEach((lead, idx) => {
+            const capacityValues = timePoints.map((tp, tpIdx) => {
+                return (capacityData[lead].utilization[tpIdx] / 100) * capacityData[lead].maxCapacity;
+            });
+
+            datasets.push({
+                label: `${lead} (Lead)`,
+                data: capacityValues,
+                backgroundColor: colors[idx % colors.length] + '60',
+                borderColor: colors[idx % colors.length],
+                borderWidth: 2,
+                fill: true
+            });
+        });
+
+        specialistsToShow.forEach((spec, idx) => {
+            const capacityValues = timePoints.map((tp, tpIdx) => {
+                return (capacityData[spec].utilization[tpIdx] / 100) * capacityData[spec].maxCapacity;
+            });
+
+            datasets.push({
+                label: `${spec} (Specialist)`,
+                data: capacityValues,
+                backgroundColor: colors[(idx + leadsToShow.length) % colors.length] + '60',
+                borderColor: colors[(idx + leadsToShow.length) % colors.length],
+                borderWidth: 2,
+                fill: true
+            });
+        });
+    }
+
+    // Create chart
+    const ctx = canvas.getContext('2d');
+    phaseCapacityStackedAreaChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: timePoints.map(tp => tp.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })),
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            aspectRatio: 2.5,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: ${context.parsed.y.toFixed(2)} capacity units`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    stacked: phaseCapacityViewMode === 'aggregate',
+                    grid: {
+                        display: false
+                    },
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 45
+                    }
+                },
+                y: {
+                    stacked: phaseCapacityViewMode === 'aggregate',
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: phaseCapacityViewMode === 'aggregate' ? 'Weighted Capacity Units' : 'Capacity Units per Person'
+                    },
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)'
+                    }
+                }
+            },
+            interaction: {
+                mode: 'nearest',
+                axis: 'x',
+                intersect: false
+            }
+        }
+    });
+}
+
+// Toggle view for Capacity Utilization Timeline
+function toggleCapacityTimelineView(mode) {
+    capacityTimelineViewMode = mode;
+
+    // Update button states
+    document.querySelectorAll('[onclick*="toggleCapacityTimelineView"] .view-toggle-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+
+    // Show/hide individual selection panel
+    const panel = document.getElementById('capacityTimelineIndividualPanel');
+    if (mode === 'individual') {
+        panel.classList.add('active');
+        panel.style.display = 'flex';
+    } else {
+        panel.classList.remove('active');
+        panel.style.display = 'none';
+    }
+
+    // Recreate chart
+    createCapacityUtilizationTimeline();
+}
+
+// Toggle view for Phase Capacity Stacked Area
+function togglePhaseCapacityView(mode) {
+    phaseCapacityViewMode = mode;
+
+    // Update button states
+    document.querySelectorAll('[onclick*="togglePhaseCapacityView"] .view-toggle-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+
+    // Show/hide individual selection panel
+    const panel = document.getElementById('phaseCapacityIndividualPanel');
+    if (mode === 'individual') {
+        panel.classList.add('active');
+        panel.style.display = 'flex';
+    } else {
+        panel.classList.remove('active');
+        panel.style.display = 'none';
+    }
+
+    // Recreate chart
+    createPhaseCapacityStackedArea();
+}
+
+// Populate individual selection checkboxes
+function populateIndividualCheckboxes(chartType, leads, specialists) {
+    const leadContainer = document.getElementById(`${chartType}LeadCheckboxes`);
+    const specialistContainer = document.getElementById(`${chartType}SpecialistCheckboxes`);
+
+    if (!leadContainer || !specialistContainer) return;
+
+    // Clear existing checkboxes
+    leadContainer.innerHTML = '';
+    specialistContainer.innerHTML = '';
+
+    // Create checkboxes for leads
+    leads.forEach(lead => {
+        const div = document.createElement('div');
+        div.className = 'checkbox-item';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `${chartType}_lead_${lead.replace(/\s/g, '_')}`;
+        checkbox.value = lead;
+        checkbox.onchange = function() {
+            handleIndividualSelection(chartType, 'leads', lead, this.checked);
+        };
+
+        const label = document.createElement('label');
+        label.htmlFor = checkbox.id;
+        label.textContent = lead;
+
+        div.appendChild(checkbox);
+        div.appendChild(label);
+        leadContainer.appendChild(div);
+    });
+
+    // Create checkboxes for specialists
+    specialists.forEach(spec => {
+        const div = document.createElement('div');
+        div.className = 'checkbox-item';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `${chartType}_specialist_${spec.replace(/\s/g, '_')}`;
+        checkbox.value = spec;
+        checkbox.onchange = function() {
+            handleIndividualSelection(chartType, 'specialists', spec, this.checked);
+        };
+
+        const label = document.createElement('label');
+        label.htmlFor = checkbox.id;
+        label.textContent = spec;
+
+        div.appendChild(checkbox);
+        div.appendChild(label);
+        specialistContainer.appendChild(div);
+    });
+}
+
+// Handle individual selection changes
+function handleIndividualSelection(chartType, role, person, isChecked) {
+    if (chartType === 'capacityTimeline') {
+        if (isChecked) {
+            if (!selectedCapacityTimelineIndividuals[role].includes(person)) {
+                selectedCapacityTimelineIndividuals[role].push(person);
+            }
+        } else {
+            selectedCapacityTimelineIndividuals[role] = selectedCapacityTimelineIndividuals[role].filter(p => p !== person);
+        }
+        createCapacityUtilizationTimeline();
+    } else if (chartType === 'phaseCapacity') {
+        if (isChecked) {
+            if (!selectedPhaseCapacityIndividuals[role].includes(person)) {
+                selectedPhaseCapacityIndividuals[role].push(person);
+            }
+        } else {
+            selectedPhaseCapacityIndividuals[role] = selectedPhaseCapacityIndividuals[role].filter(p => p !== person);
+        }
+        createPhaseCapacityStackedArea();
+    }
 }

@@ -501,6 +501,78 @@
                         <canvas id="specialistsPhaseChart"></canvas>
                     </div>
                 </div>
+
+                <!-- NEW: Capacity Utilization Timeline (Option 1) -->
+                <div class="capacity-timeline-section">
+                    <div class="chart-card">
+                        <div class="chart-header-with-controls">
+                            <div>
+                                <h3>Capacity Utilization Timeline</h3>
+                                <p class="chart-subtitle">Track capacity utilization percentage over time</p>
+                            </div>
+                            <div class="chart-controls">
+                                <div class="view-toggle-group">
+                                    <button class="view-toggle-btn active" onclick="toggleCapacityTimelineView('aggregate')" data-view="aggregate">
+                                        Aggregate by Role
+                                    </button>
+                                    <button class="view-toggle-btn" onclick="toggleCapacityTimelineView('individual')" data-view="individual">
+                                        Individual View
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Individual Selection Panel (hidden by default) -->
+                        <div id="capacityTimelineIndividualPanel" class="individual-selection-panel" style="display: none;">
+                            <div class="individual-selection-role">
+                                <h4>Project Leads</h4>
+                                <div id="capacityTimelineLeadCheckboxes" class="checkbox-group"></div>
+                            </div>
+                            <div class="individual-selection-role">
+                                <h4>Specialists</h4>
+                                <div id="capacityTimelineSpecialistCheckboxes" class="checkbox-group"></div>
+                            </div>
+                        </div>
+
+                        <canvas id="capacityUtilizationTimelineChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- NEW: Phase Capacity Stacked Area (Option 2) -->
+                <div class="phase-capacity-section">
+                    <div class="chart-card">
+                        <div class="chart-header-with-controls">
+                            <div>
+                                <h3>Phase Capacity Over Time</h3>
+                                <p class="chart-subtitle">Visualize capacity consumption across lifecycle phases</p>
+                            </div>
+                            <div class="chart-controls">
+                                <div class="view-toggle-group">
+                                    <button class="view-toggle-btn active" onclick="togglePhaseCapacityView('aggregate')" data-view="aggregate">
+                                        Aggregate by Role
+                                    </button>
+                                    <button class="view-toggle-btn" onclick="togglePhaseCapacityView('individual')" data-view="individual">
+                                        Individual View
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Individual Selection Panel (hidden by default) -->
+                        <div id="phaseCapacityIndividualPanel" class="individual-selection-panel" style="display: none;">
+                            <div class="individual-selection-role">
+                                <h4>Project Leads</h4>
+                                <div id="phaseCapacityLeadCheckboxes" class="checkbox-group"></div>
+                            </div>
+                            <div class="individual-selection-role">
+                                <h4>Specialists</h4>
+                                <div id="phaseCapacitySpecialistCheckboxes" class="checkbox-group"></div>
+                            </div>
+                        </div>
+
+                        <canvas id="phaseCapacityStackedAreaChart"></canvas>
+                    </div>
+                </div>
             </div>
 
             <!-- Tab: Data & Operations -->
