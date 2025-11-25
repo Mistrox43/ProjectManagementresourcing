@@ -4321,8 +4321,8 @@ function createSpecialistsPhaseChart() {
 // Global variables to store chart instances and current view state
 let capacityUtilizationTimelineChart = null;
 let phaseCapacityStackedAreaChart = null;
-let capacityTimelineViewMode = 'aggregate'; // 'aggregate' or 'individual'
-let phaseCapacityViewMode = 'aggregate'; // 'aggregate' or 'individual'
+let capacityTimelineViewMode = 'leads'; // 'leads', 'specialists', 'both', or 'individual'
+let phaseCapacityViewMode = 'leads'; // 'leads', 'specialists', 'both', or 'individual'
 let selectedCapacityTimelineIndividuals = { leads: [], specialists: [] };
 let selectedPhaseCapacityIndividuals = { leads: [], specialists: [] };
 
@@ -4542,39 +4542,7 @@ function createCapacityUtilizationTimeline() {
     // Prepare chart data based on view mode
     let datasets = [];
 
-    if (capacityTimelineViewMode === 'aggregate') {
-        // Aggregate by role
-        const leadUtilizations = timePoints.map((tp, idx) => {
-            const totalUtil = leads.reduce((sum, lead) => sum + capacityData[lead].utilization[idx], 0);
-            return leads.length > 0 ? totalUtil / leads.length : 0;
-        });
-
-        const specialistUtilizations = timePoints.map((tp, idx) => {
-            const totalUtil = specialists.reduce((sum, spec) => sum + capacityData[spec].utilization[idx], 0);
-            return specialists.length > 0 ? totalUtil / specialists.length : 0;
-        });
-
-        datasets = [
-            {
-                label: 'Project Leads (Avg)',
-                data: leadUtilizations,
-                borderColor: '#10b981',
-                backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                borderWidth: 3,
-                fill: true,
-                tension: 0.4
-            },
-            {
-                label: 'Specialists (Avg)',
-                data: specialistUtilizations,
-                borderColor: '#f59e0b',
-                backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                borderWidth: 3,
-                fill: true,
-                tension: 0.4
-            }
-        ];
-    } else {
+    if (capacityTimelineViewMode === 'individual') {
         // Individual view
         const selectedLeads = selectedCapacityTimelineIndividuals.leads;
         const selectedSpecialists = selectedCapacityTimelineIndividuals.specialists;
@@ -4623,6 +4591,41 @@ function createCapacityUtilizationTimeline() {
                 });
             }
         });
+    } else {
+        // Aggregate view (leads, specialists, or both)
+        const leadUtilizations = timePoints.map((tp, idx) => {
+            const totalUtil = leads.reduce((sum, lead) => sum + capacityData[lead].utilization[idx], 0);
+            return leads.length > 0 ? totalUtil / leads.length : 0;
+        });
+
+        const specialistUtilizations = timePoints.map((tp, idx) => {
+            const totalUtil = specialists.reduce((sum, spec) => sum + capacityData[spec].utilization[idx], 0);
+            return specialists.length > 0 ? totalUtil / specialists.length : 0;
+        });
+
+        if (capacityTimelineViewMode === 'leads' || capacityTimelineViewMode === 'both') {
+            datasets.push({
+                label: 'Project Leads (Avg)',
+                data: leadUtilizations,
+                borderColor: '#10b981',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.4
+            });
+        }
+
+        if (capacityTimelineViewMode === 'specialists' || capacityTimelineViewMode === 'both') {
+            datasets.push({
+                label: 'Specialists (Avg)',
+                data: specialistUtilizations,
+                borderColor: '#f59e0b',
+                backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.4
+            });
+        }
     }
 
     // Create chart
@@ -4786,35 +4789,7 @@ function createPhaseCapacityStackedArea() {
     // Prepare datasets based on view mode
     let datasets = [];
 
-    if (phaseCapacityViewMode === 'aggregate') {
-        // Aggregate by role - show phase breakdown
-        // We'll calculate total weighted capacity for all leads/specialists combined
-        const peopleToAggregate = [...leads, ...specialists];
-
-        phases.forEach(phase => {
-            const phaseData = timePoints.map((tp, idx) => {
-                let totalCapacity = 0;
-                peopleToAggregate.forEach(person => {
-                    const phaseProjects = capacityData[person].phaseBreakdown[idx]?.[phase.key] || [];
-                    const role = capacityData[person].role;
-                    const weight = role === 'Lead' ?
-                        capacityConfig.phaseWeights.lead[phase.key] || 0 :
-                        capacityConfig.phaseWeights.specialist[phase.key] || 0;
-                    totalCapacity += (phaseProjects.length * weight) / 100;
-                });
-                return totalCapacity;
-            });
-
-            datasets.push({
-                label: phase.label,
-                data: phaseData,
-                backgroundColor: phase.color,
-                borderColor: phase.color,
-                borderWidth: 1,
-                fill: true
-            });
-        });
-    } else {
+    if (phaseCapacityViewMode === 'individual') {
         // Individual view - show phase breakdown for selected individuals
         const selectedLeads = selectedPhaseCapacityIndividuals.leads;
         const selectedSpecialists = selectedPhaseCapacityIndividuals.specialists;
@@ -4836,6 +4811,43 @@ function createPhaseCapacityStackedArea() {
             const phaseData = timePoints.map((tp, idx) => {
                 let totalCapacity = 0;
                 peopleToShow.forEach(person => {
+                    if (capacityData[person]) {
+                        const phaseProjects = capacityData[person].phaseBreakdown[idx]?.[phase.key] || [];
+                        const role = capacityData[person].role;
+                        const weight = role === 'Lead' ?
+                            capacityConfig.phaseWeights.lead[phase.key] || 0 :
+                            capacityConfig.phaseWeights.specialist[phase.key] || 0;
+                        totalCapacity += (phaseProjects.length * weight) / 100;
+                    }
+                });
+                return totalCapacity;
+            });
+
+            datasets.push({
+                label: phase.label,
+                data: phaseData,
+                backgroundColor: phase.color,
+                borderColor: phase.color,
+                borderWidth: 1,
+                fill: true
+            });
+        });
+    } else {
+        // Aggregate view (leads, specialists, or both) - show phase breakdown
+        let peopleToAggregate = [];
+
+        if (phaseCapacityViewMode === 'leads') {
+            peopleToAggregate = leads;
+        } else if (phaseCapacityViewMode === 'specialists') {
+            peopleToAggregate = specialists;
+        } else { // 'both'
+            peopleToAggregate = [...leads, ...specialists];
+        }
+
+        phases.forEach(phase => {
+            const phaseData = timePoints.map((tp, idx) => {
+                let totalCapacity = 0;
+                peopleToAggregate.forEach(person => {
                     if (capacityData[person]) {
                         const phaseProjects = capacityData[person].phaseBreakdown[idx]?.[phase.key] || [];
                         const role = capacityData[person].role;
