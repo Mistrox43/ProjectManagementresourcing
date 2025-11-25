@@ -4511,6 +4511,29 @@ function createCapacityUtilizationTimeline() {
     // Populate individual selection checkboxes
     populateIndividualCheckboxes('capacityTimeline', leads, specialists);
 
+    // Check if we have any data to display
+    if (timePoints.length === 0 || (leads.length === 0 && specialists.length === 0)) {
+        // No data to display - show empty chart with message
+        const ctx = canvas.getContext('2d');
+        capacityUtilizationTimelineChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: []
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                aspectRatio: 2.5,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false }
+                }
+            }
+        });
+        return;
+    }
+
     // Prepare chart data based on view mode
     let datasets = [];
 
@@ -4551,9 +4574,13 @@ function createCapacityUtilizationTimeline() {
         const selectedLeads = selectedCapacityTimelineIndividuals.leads;
         const selectedSpecialists = selectedCapacityTimelineIndividuals.specialists;
 
+        // Filter selected individuals to only include those in current filtered data
+        const validSelectedLeads = selectedLeads.filter(l => leads.includes(l) && capacityData[l]);
+        const validSelectedSpecialists = selectedSpecialists.filter(s => specialists.includes(s) && capacityData[s]);
+
         // If no individuals selected, show first 5 of each role
-        const leadsToShow = selectedLeads.length > 0 ? selectedLeads : leads.slice(0, 5);
-        const specialistsToShow = selectedSpecialists.length > 0 ? selectedSpecialists : specialists.slice(0, 5);
+        const leadsToShow = validSelectedLeads.length > 0 ? validSelectedLeads : leads.slice(0, 5);
+        const specialistsToShow = validSelectedSpecialists.length > 0 ? validSelectedSpecialists : specialists.slice(0, 5);
 
         const colors = [
             '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -4561,28 +4588,34 @@ function createCapacityUtilizationTimeline() {
         ];
 
         leadsToShow.forEach((lead, idx) => {
-            datasets.push({
-                label: `${lead} (Lead)`,
-                data: capacityData[lead].utilization,
-                borderColor: colors[idx % colors.length],
-                backgroundColor: colors[idx % colors.length] + '20',
-                borderWidth: 2,
-                fill: false,
-                tension: 0.4
-            });
+            // Double check the person exists in capacityData
+            if (capacityData[lead] && capacityData[lead].utilization) {
+                datasets.push({
+                    label: `${lead} (Lead)`,
+                    data: capacityData[lead].utilization,
+                    borderColor: colors[idx % colors.length],
+                    backgroundColor: colors[idx % colors.length] + '20',
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.4
+                });
+            }
         });
 
         specialistsToShow.forEach((spec, idx) => {
-            datasets.push({
-                label: `${spec} (Specialist)`,
-                data: capacityData[spec].utilization,
-                borderColor: colors[(idx + leadsToShow.length) % colors.length],
-                backgroundColor: colors[(idx + leadsToShow.length) % colors.length] + '20',
-                borderWidth: 2,
-                fill: false,
-                tension: 0.4,
-                borderDash: [5, 5]
-            });
+            // Double check the person exists in capacityData
+            if (capacityData[spec] && capacityData[spec].utilization) {
+                datasets.push({
+                    label: `${spec} (Specialist)`,
+                    data: capacityData[spec].utilization,
+                    borderColor: colors[(idx + leadsToShow.length) % colors.length],
+                    backgroundColor: colors[(idx + leadsToShow.length) % colors.length] + '20',
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.4,
+                    borderDash: [5, 5]
+                });
+            }
         });
     }
 
@@ -4709,6 +4742,29 @@ function createPhaseCapacityStackedArea() {
     // Populate individual selection checkboxes
     populateIndividualCheckboxes('phaseCapacity', leads, specialists);
 
+    // Check if we have any data to display
+    if (timePoints.length === 0 || (leads.length === 0 && specialists.length === 0)) {
+        // No data to display - show empty chart
+        const ctx = canvas.getContext('2d');
+        phaseCapacityStackedAreaChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: []
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                aspectRatio: 2.5,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false }
+                }
+            }
+        });
+        return;
+    }
+
     // Define phases to display
     const phases = [
         { key: 'preKickoff30Plus', label: 'Pre-Kickoff (>30d)', color: '#e0f2fe' },
@@ -4757,42 +4813,52 @@ function createPhaseCapacityStackedArea() {
         const selectedLeads = selectedPhaseCapacityIndividuals.leads;
         const selectedSpecialists = selectedPhaseCapacityIndividuals.specialists;
 
+        // Filter selected individuals to only include those in current filtered data
+        const validSelectedLeads = selectedLeads.filter(l => leads.includes(l) && capacityData[l]);
+        const validSelectedSpecialists = selectedSpecialists.filter(s => specialists.includes(s) && capacityData[s]);
+
         // If no individuals selected, show first 3 of each role
-        const leadsToShow = selectedLeads.length > 0 ? selectedLeads : leads.slice(0, 3);
-        const specialistsToShow = selectedSpecialists.length > 0 ? selectedSpecialists : specialists.slice(0, 3);
+        const leadsToShow = validSelectedLeads.length > 0 ? validSelectedLeads : leads.slice(0, 3);
+        const specialistsToShow = validSelectedSpecialists.length > 0 ? validSelectedSpecialists : specialists.slice(0, 3);
 
         const colors = [
             '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
         ];
 
         leadsToShow.forEach((lead, idx) => {
-            const capacityValues = timePoints.map((tp, tpIdx) => {
-                return (capacityData[lead].utilization[tpIdx] / 100) * capacityData[lead].maxCapacity;
-            });
+            // Double check the person exists in capacityData
+            if (capacityData[lead] && capacityData[lead].utilization) {
+                const capacityValues = timePoints.map((tp, tpIdx) => {
+                    return (capacityData[lead].utilization[tpIdx] / 100) * capacityData[lead].maxCapacity;
+                });
 
-            datasets.push({
-                label: `${lead} (Lead)`,
-                data: capacityValues,
-                backgroundColor: colors[idx % colors.length] + '60',
-                borderColor: colors[idx % colors.length],
-                borderWidth: 2,
-                fill: true
-            });
+                datasets.push({
+                    label: `${lead} (Lead)`,
+                    data: capacityValues,
+                    backgroundColor: colors[idx % colors.length] + '60',
+                    borderColor: colors[idx % colors.length],
+                    borderWidth: 2,
+                    fill: true
+                });
+            }
         });
 
         specialistsToShow.forEach((spec, idx) => {
-            const capacityValues = timePoints.map((tp, tpIdx) => {
-                return (capacityData[spec].utilization[tpIdx] / 100) * capacityData[spec].maxCapacity;
-            });
+            // Double check the person exists in capacityData
+            if (capacityData[spec] && capacityData[spec].utilization) {
+                const capacityValues = timePoints.map((tp, tpIdx) => {
+                    return (capacityData[spec].utilization[tpIdx] / 100) * capacityData[spec].maxCapacity;
+                });
 
-            datasets.push({
-                label: `${spec} (Specialist)`,
-                data: capacityValues,
-                backgroundColor: colors[(idx + leadsToShow.length) % colors.length] + '60',
-                borderColor: colors[(idx + leadsToShow.length) % colors.length],
-                borderWidth: 2,
-                fill: true
-            });
+                datasets.push({
+                    label: `${spec} (Specialist)`,
+                    data: capacityValues,
+                    backgroundColor: colors[(idx + leadsToShow.length) % colors.length] + '60',
+                    borderColor: colors[(idx + leadsToShow.length) % colors.length],
+                    borderWidth: 2,
+                    fill: true
+                });
+            }
         });
     }
 
@@ -4910,6 +4976,15 @@ function populateIndividualCheckboxes(chartType, leads, specialists) {
 
     if (!leadContainer || !specialistContainer) return;
 
+    // Get current selections
+    const selectedIndividuals = chartType === 'capacityTimeline' ?
+        selectedCapacityTimelineIndividuals :
+        selectedPhaseCapacityIndividuals;
+
+    // Clean up selections - remove people who are no longer in the filtered dataset
+    selectedIndividuals.leads = selectedIndividuals.leads.filter(l => leads.includes(l));
+    selectedIndividuals.specialists = selectedIndividuals.specialists.filter(s => specialists.includes(s));
+
     // Clear existing checkboxes
     leadContainer.innerHTML = '';
     specialistContainer.innerHTML = '';
@@ -4923,6 +4998,8 @@ function populateIndividualCheckboxes(chartType, leads, specialists) {
         checkbox.type = 'checkbox';
         checkbox.id = `${chartType}_lead_${lead.replace(/\s/g, '_')}`;
         checkbox.value = lead;
+        // Restore checked state
+        checkbox.checked = selectedIndividuals.leads.includes(lead);
         checkbox.onchange = function() {
             handleIndividualSelection(chartType, 'leads', lead, this.checked);
         };
@@ -4945,6 +5022,8 @@ function populateIndividualCheckboxes(chartType, leads, specialists) {
         checkbox.type = 'checkbox';
         checkbox.id = `${chartType}_specialist_${spec.replace(/\s/g, '_')}`;
         checkbox.value = spec;
+        // Restore checked state
+        checkbox.checked = selectedIndividuals.specialists.includes(spec);
         checkbox.onchange = function() {
             handleIndividualSelection(chartType, 'specialists', spec, this.checked);
         };
