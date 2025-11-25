@@ -4814,7 +4814,7 @@ function createPhaseCapacityStackedArea() {
             });
         });
     } else {
-        // Individual view - show total capacity per person (not broken down by phase)
+        // Individual view - show phase breakdown for selected individuals
         const selectedLeads = selectedPhaseCapacityIndividuals.leads;
         const selectedSpecialists = selectedPhaseCapacityIndividuals.specialists;
 
@@ -4826,44 +4826,34 @@ function createPhaseCapacityStackedArea() {
         const leadsToShow = validSelectedLeads.length > 0 ? validSelectedLeads : leads.slice(0, 3);
         const specialistsToShow = validSelectedSpecialists.length > 0 ? validSelectedSpecialists : specialists.slice(0, 3);
 
-        const colors = [
-            '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
-        ];
+        // Combine selected individuals
+        const peopleToShow = [...leadsToShow, ...specialistsToShow];
 
-        leadsToShow.forEach((lead, idx) => {
-            // Double check the person exists in capacityData
-            if (capacityData[lead] && capacityData[lead].utilization) {
-                const capacityValues = timePoints.map((tp, tpIdx) => {
-                    return (capacityData[lead].utilization[tpIdx] / 100) * capacityData[lead].maxCapacity;
+        // Show phase breakdown for selected individuals (stacked area like aggregate mode)
+        phases.forEach(phase => {
+            const phaseData = timePoints.map((tp, idx) => {
+                let totalCapacity = 0;
+                peopleToShow.forEach(person => {
+                    if (capacityData[person]) {
+                        const phaseProjects = capacityData[person].phaseBreakdown[idx]?.[phase.key] || [];
+                        const role = capacityData[person].role;
+                        const weight = role === 'Lead' ?
+                            capacityConfig.phaseWeights.lead[phase.key] || 0 :
+                            capacityConfig.phaseWeights.specialist[phase.key] || 0;
+                        totalCapacity += (phaseProjects.length * weight) / 100;
+                    }
                 });
+                return totalCapacity;
+            });
 
-                datasets.push({
-                    label: `${lead} (Lead)`,
-                    data: capacityValues,
-                    backgroundColor: colors[idx % colors.length] + '60',
-                    borderColor: colors[idx % colors.length],
-                    borderWidth: 2,
-                    fill: true
-                });
-            }
-        });
-
-        specialistsToShow.forEach((spec, idx) => {
-            // Double check the person exists in capacityData
-            if (capacityData[spec] && capacityData[spec].utilization) {
-                const capacityValues = timePoints.map((tp, tpIdx) => {
-                    return (capacityData[spec].utilization[tpIdx] / 100) * capacityData[spec].maxCapacity;
-                });
-
-                datasets.push({
-                    label: `${spec} (Specialist)`,
-                    data: capacityValues,
-                    backgroundColor: colors[(idx + leadsToShow.length) % colors.length] + '60',
-                    borderColor: colors[(idx + leadsToShow.length) % colors.length],
-                    borderWidth: 2,
-                    fill: true
-                });
-            }
+            datasets.push({
+                label: phase.label,
+                data: phaseData,
+                backgroundColor: phase.color,
+                borderColor: phase.color,
+                borderWidth: 1,
+                fill: true
+            });
         });
     }
 
@@ -4896,7 +4886,7 @@ function createPhaseCapacityStackedArea() {
             },
             scales: {
                 x: {
-                    stacked: phaseCapacityViewMode === 'aggregate',
+                    stacked: true,
                     grid: {
                         display: false
                     },
@@ -4906,11 +4896,11 @@ function createPhaseCapacityStackedArea() {
                     }
                 },
                 y: {
-                    stacked: phaseCapacityViewMode === 'aggregate',
+                    stacked: true,
                     beginAtZero: true,
                     title: {
                         display: true,
-                        text: phaseCapacityViewMode === 'aggregate' ? 'Weighted Capacity Units' : 'Capacity Units per Person'
+                        text: phaseCapacityViewMode === 'aggregate' ? 'Weighted Capacity Units (All Team)' : 'Weighted Capacity Units (Selected)'
                     },
                     grid: {
                         color: 'rgba(0, 0, 0, 0.05)'
