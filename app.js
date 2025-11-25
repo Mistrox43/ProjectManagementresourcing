@@ -4583,9 +4583,10 @@ function createCapacityUtilizationTimeline() {
         const validSelectedLeads = selectedLeads.filter(l => leads.includes(l) && capacityData[l]);
         const validSelectedSpecialists = selectedSpecialists.filter(s => specialists.includes(s) && capacityData[s]);
 
-        // If no individuals selected, show first 5 of each role
-        const leadsToShow = validSelectedLeads.length > 0 ? validSelectedLeads : leads.slice(0, 5);
-        const specialistsToShow = validSelectedSpecialists.length > 0 ? validSelectedSpecialists : specialists.slice(0, 5);
+        // If ANY individuals are selected (from either role), show ONLY selected; otherwise show defaults
+        const hasAnySelection = validSelectedLeads.length > 0 || validSelectedSpecialists.length > 0;
+        const leadsToShow = hasAnySelection ? validSelectedLeads : leads.slice(0, 5);
+        const specialistsToShow = hasAnySelection ? validSelectedSpecialists : specialists.slice(0, 5);
 
         const colors = [
             '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -4822,9 +4823,10 @@ function createPhaseCapacityStackedArea() {
         const validSelectedLeads = selectedLeads.filter(l => leads.includes(l) && capacityData[l]);
         const validSelectedSpecialists = selectedSpecialists.filter(s => specialists.includes(s) && capacityData[s]);
 
-        // If no individuals selected, show first 3 of each role
-        const leadsToShow = validSelectedLeads.length > 0 ? validSelectedLeads : leads.slice(0, 3);
-        const specialistsToShow = validSelectedSpecialists.length > 0 ? validSelectedSpecialists : specialists.slice(0, 3);
+        // If ANY individuals are selected (from either role), show ONLY selected; otherwise show defaults
+        const hasAnySelection = validSelectedLeads.length > 0 || validSelectedSpecialists.length > 0;
+        const leadsToShow = hasAnySelection ? validSelectedLeads : leads.slice(0, 3);
+        const specialistsToShow = hasAnySelection ? validSelectedSpecialists : specialists.slice(0, 3);
 
         // Combine selected individuals
         const peopleToShow = [...leadsToShow, ...specialistsToShow];
