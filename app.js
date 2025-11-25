@@ -4935,7 +4935,7 @@ function toggleCapacityTimelineView(mode) {
     capacityTimelineViewMode = mode;
 
     // Update button states
-    document.querySelectorAll('[onclick*="toggleCapacityTimelineView"] .view-toggle-btn').forEach(btn => {
+    document.querySelectorAll('button[onclick*="toggleCapacityTimelineView"]').forEach(btn => {
         btn.classList.remove('active');
     });
     event.target.classList.add('active');
@@ -4959,7 +4959,7 @@ function togglePhaseCapacityView(mode) {
     phaseCapacityViewMode = mode;
 
     // Update button states
-    document.querySelectorAll('[onclick*="togglePhaseCapacityView"] .view-toggle-btn').forEach(btn => {
+    document.querySelectorAll('button[onclick*="togglePhaseCapacityView"]').forEach(btn => {
         btn.classList.remove('active');
     });
     event.target.classList.add('active');
