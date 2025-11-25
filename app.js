@@ -4357,8 +4357,13 @@ function calculateCapacityOverTime(projects, startDate, endDate, granularity = '
 
     // Initialize data structure
     [...leads, ...specialists].forEach(person => {
+        const role = leads.includes(person) ? 'Lead' : 'Specialist';
+        const maxCapacity = capacityConfig.individualOverrides[person]?.capacity ||
+                           (role === 'Lead' ? capacityConfig.defaultLeadCapacity : capacityConfig.defaultSpecialistCapacity);
+
         capacityData[person] = {
-            role: leads.includes(person) ? 'Lead' : 'Specialist',
+            role: role,
+            maxCapacity: maxCapacity,
             timePoints: [],
             utilization: [],
             phaseBreakdown: []
