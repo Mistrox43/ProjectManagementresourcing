@@ -1357,6 +1357,47 @@ tbody tr:hover {
     margin-bottom: 2rem;
 }
 
+/* Capacity Sub-Tabs */
+.capacity-sub-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+    border-bottom: 2px solid var(--border);
+}
+
+.capacity-sub-tab {
+    padding: 0.75rem 1.5rem;
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    bottom: -2px;
+}
+
+.capacity-sub-tab:hover {
+    color: var(--text-primary);
+    background: rgba(37, 99, 235, 0.05);
+}
+
+.capacity-sub-tab.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+    font-weight: 600;
+}
+
+.capacity-sub-tab-content {
+    display: none;
+}
+
+.capacity-sub-tab-content.active {
+    display: block;
+}
+
 /* Resource Capacity Container */
 .resource-capacity-container {
     background: var(--surface);

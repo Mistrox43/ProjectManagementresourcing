@@ -5069,3 +5069,22 @@ function handleIndividualSelection(chartType, role, person, isChecked) {
         createPhaseCapacityStackedArea();
     }
 }
+
+// Switch between capacity sub-tabs (Current Snapshot vs Projections Over Time)
+function switchCapacitySubTab(subtab) {
+    // Update button states
+    document.querySelectorAll('.capacity-sub-tab').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+
+    // Update content visibility
+    document.querySelectorAll('.capacity-sub-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+
+    const targetContent = document.getElementById(`capacity-subtab-${subtab}`);
+    if (targetContent) {
+        targetContent.classList.add('active');
+    }
+}
