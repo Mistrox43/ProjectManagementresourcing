@@ -3422,10 +3422,12 @@ function updateSidePanelContent() {
 
 // Load capacity configuration from localStorage
 function loadCapacityConfig() {
+    console.log('=== LOADING CAPACITY CONFIG ===');
     const saved = localStorage.getItem('capacityConfig');
     if (saved) {
         try {
             const savedConfig = JSON.parse(saved);
+            console.log('Loaded from localStorage:', savedConfig);
             // Merge saved config with defaults (in case new fields were added)
             capacityConfig = {
                 ...capacityConfig,
@@ -3441,10 +3443,17 @@ function loadCapacityConfig() {
                     }
                 }
             };
+            console.log('Merged Lead Phase Weights:', JSON.stringify(capacityConfig.phaseWeights.lead, null, 2));
+            console.log('Merged Specialist Phase Weights:', JSON.stringify(capacityConfig.phaseWeights.specialist, null, 2));
         } catch (e) {
             console.error('Error loading capacity config:', e);
         }
+    } else {
+        console.log('No saved config found in localStorage, using defaults');
+        console.log('Default Lead Phase Weights:', JSON.stringify(capacityConfig.phaseWeights.lead, null, 2));
+        console.log('Default Specialist Phase Weights:', JSON.stringify(capacityConfig.phaseWeights.specialist, null, 2));
     }
+    console.log('=== END LOAD ===');
 
     // Update UI inputs if they exist
     const leadInput = document.getElementById('defaultLeadCapacity');
@@ -3502,6 +3511,7 @@ function saveCapacityConfig() {
     const phaseFields = ['preKickoff30Plus', 'preKickoff0to30', 'activePreTesting', 'activeTesting',
                          'activePostTesting', 'postGoLive0to30', 'postGoLive30Plus'];
 
+    console.log('=== SAVING CAPACITY CONFIG ===');
     phaseFields.forEach(phase => {
         const leadInput = document.getElementById(`lead${phase.charAt(0).toUpperCase() + phase.slice(1)}`);
         const specialistInput = document.getElementById(`specialist${phase.charAt(0).toUpperCase() + phase.slice(1)}`);
@@ -3514,7 +3524,12 @@ function saveCapacityConfig() {
         }
     });
 
+    console.log('Lead Phase Weights:', JSON.stringify(capacityConfig.phaseWeights.lead, null, 2));
+    console.log('Specialist Phase Weights:', JSON.stringify(capacityConfig.phaseWeights.specialist, null, 2));
+
     localStorage.setItem('capacityConfig', JSON.stringify(capacityConfig));
+    console.log('Config saved to localStorage');
+    console.log('=== END SAVE ===');
 
     // Re-render capacity planning if on that tab
     if (currentTab === 'capacity-planning') {
@@ -4372,7 +4387,9 @@ function calculateCapacityOverTime(projects, startDate, endDate, granularity = '
     });
 
     // For each time point, calculate capacity as if we're looking at that date
-    timePoints.forEach(timePoint => {
+    timePoints.forEach((timePoint, timeIdx) => {
+        const isFirstTimePoint = timeIdx === 0;
+
         // Filter projects that would be active/relevant at this time point
         const relevantProjects = projects.filter(project => {
             const phase = determineProjectPhase(project);
@@ -4406,21 +4423,25 @@ function calculateCapacityOverTime(projects, startDate, endDate, granularity = '
         });
 
         // Calculate capacity for each person at this time point
-        leads.forEach(lead => {
+        leads.forEach((lead, leadIdx) => {
             const leadProjects = relevantProjects.filter(p => p['OH Project Lead'] === lead);
-            const capacity = calculateResourceCapacityForProjects(lead, 'Lead', leadProjects, timePoint);
+            // Enable debug for first time point and first lead only
+            const debugMode = isFirstTimePoint && leadIdx === 0;
+            const capacity = calculateResourceCapacityForProjects(lead, 'Lead', leadProjects, timePoint, debugMode);
 
             capacityData[lead].timePoints.push(timePoint);
             capacityData[lead].utilization.push(capacity.utilization);
             capacityData[lead].phaseBreakdown.push(capacity.phaseBreakdown);
         });
 
-        specialists.forEach(specialist => {
+        specialists.forEach((specialist, specIdx) => {
             const specialistProjects = relevantProjects.filter(p => {
                 const projectSpecialists = getAllSpecialistsFromField(p['OH Specialist(s)']);
                 return projectSpecialists.includes(specialist);
             });
-            const capacity = calculateResourceCapacityForProjects(specialist, 'Specialist', specialistProjects, timePoint);
+            // Enable debug for first time point and first specialist only
+            const debugMode = isFirstTimePoint && specIdx === 0;
+            const capacity = calculateResourceCapacityForProjects(specialist, 'Specialist', specialistProjects, timePoint, debugMode);
 
             capacityData[specialist].timePoints.push(timePoint);
             capacityData[specialist].utilization.push(capacity.utilization);
@@ -4432,7 +4453,7 @@ function calculateCapacityOverTime(projects, startDate, endDate, granularity = '
 }
 
 // Helper function to calculate capacity for a specific person and project list at a given time point
-function calculateResourceCapacityForProjects(person, role, projects, atDate) {
+function calculateResourceCapacityForProjects(person, role, projects, atDate, debugMode = false) {
     const maxCapacity = capacityConfig.individualOverrides[person]?.capacity ||
                        (role === 'Lead' ? capacityConfig.defaultLeadCapacity : capacityConfig.defaultSpecialistCapacity);
 
@@ -4448,6 +4469,11 @@ function calculateResourceCapacityForProjects(person, role, projects, atDate) {
     };
 
     let weightedCapacity = 0;
+
+    if (debugMode && projects.length > 0) {
+        console.log(`\n--- Calculating capacity for ${person} (${role}) at ${atDate.toISOString().split('T')[0]} ---`);
+        console.log(`Projects to process: ${projects.length}`);
+    }
 
     projects.forEach(project => {
         // Temporarily override "now" for phase determination
@@ -4473,8 +4499,16 @@ function calculateResourceCapacityForProjects(person, role, projects, atDate) {
             capacityConfig.phaseWeights.lead[phase] || 0 :
             capacityConfig.phaseWeights.specialist[phase] || 0;
 
+        if (debugMode) {
+            console.log(`  Project: ${project['Project Short Name']} | Phase: ${phase} | Weight: ${weight}%`);
+        }
+
         weightedCapacity += weight / 100;
     });
+
+    if (debugMode && projects.length > 0) {
+        console.log(`Total weighted capacity: ${weightedCapacity.toFixed(2)} / ${maxCapacity} = ${((weightedCapacity / maxCapacity) * 100).toFixed(1)}%`);
+    }
 
     const utilization = maxCapacity > 0 ? (weightedCapacity / maxCapacity) * 100 : 0;
 
@@ -4490,6 +4524,13 @@ function calculateResourceCapacityForProjects(person, role, projects, atDate) {
 function createCapacityUtilizationTimeline() {
     const canvas = document.getElementById('capacityUtilizationTimelineChart');
     if (!canvas) return;
+
+    console.log('=== CREATING CAPACITY UTILIZATION TIMELINE ===');
+    console.log('Current phase weights being used:');
+    console.log('Lead:', JSON.stringify(capacityConfig.phaseWeights.lead, null, 2));
+    console.log('Specialist:', JSON.stringify(capacityConfig.phaseWeights.specialist, null, 2));
+    console.log('View mode:', capacityTimelineViewMode);
+    console.log('Filtered projects count:', filteredData.length);
 
     // Destroy existing chart
     if (capacityUtilizationTimelineChart) {
@@ -4510,6 +4551,8 @@ function createCapacityUtilizationTimeline() {
 
     const startDate = new Date(minDate.getTime() - (90 * 24 * 60 * 60 * 1000));
     const endDate = new Date(maxDate.getTime() + (90 * 24 * 60 * 60 * 1000));
+
+    console.log('Date range:', startDate.toISOString().split('T')[0], 'to', endDate.toISOString().split('T')[0]);
 
     // Calculate capacity over time
     const { capacityData, timePoints, leads, specialists } = calculateCapacityOverTime(filteredData, startDate, endDate, 'week');
@@ -4628,6 +4671,14 @@ function createCapacityUtilizationTimeline() {
             });
         }
     }
+
+    // Log dataset information
+    console.log('Created datasets:', datasets.length);
+    datasets.forEach((ds, idx) => {
+        const sampleData = ds.data.slice(0, 3);
+        console.log(`  Dataset ${idx}: ${ds.label}, Sample data:`, sampleData);
+    });
+    console.log('=== END CHART CREATION ===\n');
 
     // Create chart
     const ctx = canvas.getContext('2d');
