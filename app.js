@@ -1935,6 +1935,7 @@ function renderTable() {
         'Project Short Name',
         'OH Region',
         'Project Type',
+        'Kick-Off Date',
         'OH Go-Live Date',
         'Project Status',
         'OH Project Lead',
