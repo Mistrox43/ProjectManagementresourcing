@@ -3286,12 +3286,24 @@ function updateSidePanelContent() {
                     const projectLead = project['OH Project Lead'];
                     const projectSpecialists = getAllSpecialistsFromField(project['OH Specialist(s)']);
 
-                    const matchesLead = peopleToFilter.leads.length === 0 || peopleToFilter.leads.includes(projectLead);
-                    const matchesSpecialist = peopleToFilter.specialists.length === 0 ||
+                    // Check if project matches the lead filter (if we're filtering by leads)
+                    const matchesLead = peopleToFilter.leads.length > 0 && peopleToFilter.leads.includes(projectLead);
+
+                    // Check if project matches the specialist filter (if we're filtering by specialists)
+                    const matchesSpecialist = peopleToFilter.specialists.length > 0 &&
                                              projectSpecialists.some(s => peopleToFilter.specialists.includes(s));
 
-                    // Include if matches lead OR specialist
-                    return matchesLead || matchesSpecialist;
+                    // Include if matches ANY populated filter
+                    // If filtering by leads only, must match lead
+                    // If filtering by specialists only, must match specialist
+                    // If filtering by both, must match either
+                    if (peopleToFilter.leads.length > 0 && peopleToFilter.specialists.length > 0) {
+                        return matchesLead || matchesSpecialist;
+                    } else if (peopleToFilter.leads.length > 0) {
+                        return matchesLead;
+                    } else {
+                        return matchesSpecialist;
+                    }
                 });
             }
         }
@@ -4924,7 +4936,9 @@ function createCapacityUtilizationTimeline() {
                         leads,
                         specialists,
                         viewMode: capacityTimelineViewMode,
-                        selectedIndividuals: { leads: selectedCapacityTimelineIndividuals.leads, specialists: selectedCapacityTimelineIndividuals.specialists }
+                        selectedIndividuals: selectedCapacityTimelineIndividuals ?
+                            { leads: [...(selectedCapacityTimelineIndividuals.leads || [])], specialists: [...(selectedCapacityTimelineIndividuals.specialists || [])] } :
+                            { leads: [], specialists: [] }
                     });
                 }
             },
@@ -5179,7 +5193,9 @@ function createPhaseCapacityStackedArea() {
                         leads,
                         specialists,
                         viewMode: phaseCapacityViewMode,
-                        selectedIndividuals: { leads: selectedPhaseCapacityIndividuals.leads, specialists: selectedPhaseCapacityIndividuals.specialists }
+                        selectedIndividuals: selectedPhaseCapacityIndividuals ?
+                            { leads: [...(selectedPhaseCapacityIndividuals.leads || [])], specialists: [...(selectedPhaseCapacityIndividuals.specialists || [])] } :
+                            { leads: [], specialists: [] }
                     });
                 }
             },
