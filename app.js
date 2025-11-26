@@ -3226,7 +3226,7 @@ function updateSidePanelContent() {
 
         const timePoint = sidePanelState.allMonths[sidePanelState.monthIndex];
         const timePointLabel = timePoint.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-        const { capacityData, leads, specialists, viewMode, selectedIndividuals } = sidePanelState.chartData;
+        const { capacityData, leads, specialists } = sidePanelState.chartData;
 
         // Update title
         const chartTitle = sidePanelState.chartType === 'capacity-utilization-timeline' ?
@@ -3234,32 +3234,8 @@ function updateSidePanelContent() {
         document.getElementById('panelTitle').textContent = `${chartTitle} - ${timePointLabel}`;
         document.getElementById('currentPeriod').textContent = timePointLabel;
 
-        // Determine which people to show based on view mode and selections
-        let peopleToShow = { leads: [], specialists: [] };
-
-        if (viewMode === 'individual') {
-            // Individual view - show only selected individuals
-            const validSelectedLeads = selectedIndividuals.leads.filter(l => leads.includes(l));
-            const validSelectedSpecialists = selectedIndividuals.specialists.filter(s => specialists.includes(s));
-
-            // If ANY individuals selected, show only those; otherwise show defaults
-            const hasAnySelection = validSelectedLeads.length > 0 || validSelectedSpecialists.length > 0;
-            peopleToShow.leads = hasAnySelection ? validSelectedLeads : leads.slice(0, 5);
-            peopleToShow.specialists = hasAnySelection ? validSelectedSpecialists : specialists.slice(0, 5);
-        } else if (viewMode === 'leads') {
-            peopleToShow.leads = leads;
-            peopleToShow.specialists = [];
-        } else if (viewMode === 'specialists') {
-            peopleToShow.leads = [];
-            peopleToShow.specialists = specialists;
-        } else { // 'both'
-            peopleToShow.leads = leads;
-            peopleToShow.specialists = specialists;
-        }
-
-        // Get all projects that are relevant at this time point AND match the selected people
+        // Get all projects that are relevant at this time point
         const relevantProjects = filteredData.filter(project => {
-            // First check if project is relevant at this time point
             const phase = determineProjectPhase(project);
             if (phase.phase === 'closed' || phase.phase === 'dateError') return false;
 
@@ -3271,37 +3247,17 @@ function updateSidePanelContent() {
             const ninetyDaysBeforeTimePoint = new Date(timePoint.getTime() - (90 * 24 * 60 * 60 * 1000));
             const sixtyDaysAfterGoLive = goLiveDate ? new Date(goLiveDate.getTime() + (60 * 24 * 60 * 60 * 1000)) : null;
 
-            let isRelevant = false;
             if (kickOffDate <= timePoint) {
                 if (sixtyDaysAfterGoLive && timePoint <= sixtyDaysAfterGoLive) {
-                    isRelevant = true;
+                    return true;
                 } else if (!goLiveDate) {
-                    isRelevant = true;
+                    return true;
                 }
             } else if (kickOffDate > ninetyDaysBeforeTimePoint && kickOffDate <= new Date(timePoint.getTime() + (90 * 24 * 60 * 60 * 1000))) {
-                isRelevant = true;
+                return true;
             }
 
-            if (!isRelevant) return false;
-
-            // Now check if project matches the selected people
-            const projectLead = project['OH Project Lead'];
-            const projectSpecialists = getAllSpecialistsFromField(project['OH Specialist(s)']);
-
-            const matchesLead = peopleToShow.leads.length === 0 || peopleToShow.leads.includes(projectLead);
-            const matchesSpecialist = peopleToShow.specialists.length === 0 ||
-                                     projectSpecialists.some(s => peopleToShow.specialists.includes(s));
-
-            // Include if matches lead OR specialist (when both arrays are populated)
-            if (peopleToShow.leads.length > 0 && peopleToShow.specialists.length > 0) {
-                return matchesLead || matchesSpecialist;
-            } else if (peopleToShow.leads.length > 0) {
-                return matchesLead;
-            } else if (peopleToShow.specialists.length > 0) {
-                return matchesSpecialist;
-            }
-
-            return true;
+            return false;
         });
 
         // Temporarily override Date.now() to determine phases at this time point
@@ -4931,8 +4887,7 @@ function createCapacityUtilizationTimeline() {
                         capacityData,
                         leads,
                         specialists,
-                        viewMode: capacityTimelineViewMode,
-                        selectedIndividuals: selectedCapacityTimelineIndividuals
+                        viewMode: capacityTimelineViewMode
                     });
                 }
             },
@@ -5186,8 +5141,7 @@ function createPhaseCapacityStackedArea() {
                         capacityData,
                         leads,
                         specialists,
-                        viewMode: phaseCapacityViewMode,
-                        selectedIndividuals: selectedPhaseCapacityIndividuals
+                        viewMode: phaseCapacityViewMode
                     });
                 }
             },
