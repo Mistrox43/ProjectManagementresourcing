@@ -4849,10 +4849,33 @@ function createCapacityUtilizationTimeline() {
     const validSelectedSpecialists = selectedSpecialists.filter(s => specialists.includes(s) && capacityData[s]);
     const hasValidSelections = validSelectedLeads.length > 0 || validSelectedSpecialists.length > 0;
 
+    console.log('Selection state:', {
+        selectedLeads,
+        selectedSpecialists,
+        validSelectedLeads,
+        validSelectedSpecialists,
+        hasValidSelections,
+        availableLeads: leads,
+        availableSpecialists: specialists
+    });
+
     if (hasValidSelections || capacityTimelineViewMode === 'individual') {
-        // Individual view - show specific people (either selected via checkboxes or everyone if no selection)
-        const leadsToShow = hasValidSelections ? validSelectedLeads : leads;
-        const specialistsToShow = hasValidSelections ? validSelectedSpecialists : specialists;
+        // Individual view - show specific people
+        // If selections exist: show ONLY selected people (don't show unselected people from other role)
+        // If no selections: show everyone
+        let leadsToShow, specialistsToShow;
+
+        if (hasValidSelections) {
+            // Show ONLY selected individuals, even if empty for one role
+            leadsToShow = validSelectedLeads;
+            specialistsToShow = validSelectedSpecialists;
+        } else {
+            // No selections - show everyone
+            leadsToShow = leads;
+            specialistsToShow = specialists;
+        }
+
+        console.log('Will display:', { leadsToShow, specialistsToShow });
 
         const colors = [
             '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -5136,9 +5159,20 @@ function createPhaseCapacityStackedArea() {
     const hasValidSelections = validSelectedLeads.length > 0 || validSelectedSpecialists.length > 0;
 
     if (hasValidSelections || phaseCapacityViewMode === 'individual') {
-        // Individual view - show phase breakdown for selected individuals or everyone if no selection
-        const leadsToShow = hasValidSelections ? validSelectedLeads : leads;
-        const specialistsToShow = hasValidSelections ? validSelectedSpecialists : specialists;
+        // Individual view - show phase breakdown for specific people
+        // If selections exist: show ONLY selected people (don't show unselected people from other role)
+        // If no selections: show everyone
+        let leadsToShow, specialistsToShow;
+
+        if (hasValidSelections) {
+            // Show ONLY selected individuals, even if empty for one role
+            leadsToShow = validSelectedLeads;
+            specialistsToShow = validSelectedSpecialists;
+        } else {
+            // No selections - show everyone
+            leadsToShow = leads;
+            specialistsToShow = specialists;
+        }
 
         // Combine selected individuals
         const peopleToShow = [...leadsToShow, ...specialistsToShow];
