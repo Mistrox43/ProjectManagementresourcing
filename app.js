@@ -3266,7 +3266,7 @@ function updateSidePanelContent() {
 
         const projectsWithPhases = relevantProjects.map(project => {
             const phaseInfo = determineProjectPhase(project);
-            return { project, phase: phaseInfo.phase, phaseLabel: phaseInfo.label };
+            return { project, phase: phaseInfo.phase, phaseLabel: phaseInfo.phaseName };
         });
 
         Date.now = originalNow;
@@ -3276,6 +3276,28 @@ function updateSidePanelContent() {
         projectsWithPhases.forEach(({ phase }) => {
             phaseCounts[phase] = (phaseCounts[phase] || 0) + 1;
         });
+
+        // Define all phases with labels
+        const allPhases = [
+            { key: 'preKickoff30Plus', label: 'Pre-Kickoff (>30d)' },
+            { key: 'preKickoff0to30', label: 'Pre-Kickoff (0-30d)' },
+            { key: 'activePreTesting', label: 'Active Pre-Testing' },
+            { key: 'activeTesting', label: 'Active Testing' },
+            { key: 'activePostTesting', label: 'Active Post-Testing' },
+            { key: 'postGoLive0to30', label: 'Post-Go-Live (0-30d)' },
+            { key: 'postGoLive30Plus', label: 'Post-Go-Live (>30d)' },
+            { key: 'unknown', label: 'Unknown Phase' }
+        ];
+
+        // Build phase summary cards
+        const phaseSummaryCards = allPhases
+            .filter(p => phaseCounts[p.key] > 0)
+            .map(p => `
+                <div class="panel-stat">
+                    <div class="panel-stat-label">${p.label}</div>
+                    <div class="panel-stat-value">${phaseCounts[p.key]}</div>
+                </div>
+            `).join('');
 
         // Update summary stats
         const summaryHTML = `
@@ -3288,18 +3310,7 @@ function updateSidePanelContent() {
                 <div class="panel-stat-label">Total Relevant Projects</div>
                 <div class="panel-stat-value">${relevantProjects.length}</div>
             </div>
-            <div class="panel-stat">
-                <div class="panel-stat-label">Active Testing</div>
-                <div class="panel-stat-value">${phaseCounts.activeTesting || 0}</div>
-            </div>
-            <div class="panel-stat">
-                <div class="panel-stat-label">Pre-Kickoff</div>
-                <div class="panel-stat-value">${(phaseCounts.preKickoff30Plus || 0) + (phaseCounts.preKickoff0to30 || 0)}</div>
-            </div>
-            <div class="panel-stat">
-                <div class="panel-stat-label">Post-Go-Live</div>
-                <div class="panel-stat-value">${(phaseCounts.postGoLive0to30 || 0) + (phaseCounts.postGoLive30Plus || 0)}</div>
-            </div>
+            ${phaseSummaryCards}
         `;
         document.getElementById('panelSummary').innerHTML = summaryHTML;
 
