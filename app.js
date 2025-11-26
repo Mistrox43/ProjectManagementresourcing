@@ -3226,7 +3226,7 @@ function updateSidePanelContent() {
 
         const timePoint = sidePanelState.allMonths[sidePanelState.monthIndex];
         const timePointLabel = timePoint.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-        const { capacityData, leads, specialists } = sidePanelState.chartData;
+        const { capacityData, leads, specialists, viewMode, selectedIndividuals } = sidePanelState.chartData;
 
         // Update title
         const chartTitle = sidePanelState.chartType === 'capacity-utilization-timeline' ?
@@ -3235,7 +3235,7 @@ function updateSidePanelContent() {
         document.getElementById('currentPeriod').textContent = timePointLabel;
 
         // Get all projects that are relevant at this time point
-        const relevantProjects = filteredData.filter(project => {
+        let relevantProjects = filteredData.filter(project => {
             const phase = determineProjectPhase(project);
             if (phase.phase === 'closed' || phase.phase === 'dateError') return false;
 
@@ -3259,6 +3259,42 @@ function updateSidePanelContent() {
 
             return false;
         });
+
+        // Filter by selected individuals if applicable
+        if (viewMode && selectedIndividuals) {
+            // Determine which people to show based on view mode
+            let peopleToFilter = { leads: [], specialists: [] };
+
+            if (viewMode === 'individual') {
+                const validSelectedLeads = selectedIndividuals.leads.filter(l => leads.includes(l));
+                const validSelectedSpecialists = selectedIndividuals.specialists.filter(s => specialists.includes(s));
+                const hasAnySelection = validSelectedLeads.length > 0 || validSelectedSpecialists.length > 0;
+
+                if (hasAnySelection) {
+                    peopleToFilter.leads = validSelectedLeads;
+                    peopleToFilter.specialists = validSelectedSpecialists;
+                }
+            } else if (viewMode === 'leads') {
+                peopleToFilter.leads = leads;
+            } else if (viewMode === 'specialists') {
+                peopleToFilter.specialists = specialists;
+            }
+
+            // Apply people filter if we have any people to filter by
+            if (peopleToFilter.leads.length > 0 || peopleToFilter.specialists.length > 0) {
+                relevantProjects = relevantProjects.filter(project => {
+                    const projectLead = project['OH Project Lead'];
+                    const projectSpecialists = getAllSpecialistsFromField(project['OH Specialist(s)']);
+
+                    const matchesLead = peopleToFilter.leads.length === 0 || peopleToFilter.leads.includes(projectLead);
+                    const matchesSpecialist = peopleToFilter.specialists.length === 0 ||
+                                             projectSpecialists.some(s => peopleToFilter.specialists.includes(s));
+
+                    // Include if matches lead OR specialist
+                    return matchesLead || matchesSpecialist;
+                });
+            }
+        }
 
         // Temporarily override Date.now() to determine phases at this time point
         const originalNow = Date.now;
@@ -4887,7 +4923,8 @@ function createCapacityUtilizationTimeline() {
                         capacityData,
                         leads,
                         specialists,
-                        viewMode: capacityTimelineViewMode
+                        viewMode: capacityTimelineViewMode,
+                        selectedIndividuals: { leads: selectedCapacityTimelineIndividuals.leads, specialists: selectedCapacityTimelineIndividuals.specialists }
                     });
                 }
             },
@@ -5141,7 +5178,8 @@ function createPhaseCapacityStackedArea() {
                         capacityData,
                         leads,
                         specialists,
-                        viewMode: phaseCapacityViewMode
+                        viewMode: phaseCapacityViewMode,
+                        selectedIndividuals: { leads: selectedPhaseCapacityIndividuals.leads, specialists: selectedPhaseCapacityIndividuals.specialists }
                     });
                 }
             },
