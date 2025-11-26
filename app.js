@@ -3220,6 +3220,177 @@ function updateSidePanelContent() {
         return;
     }
 
+    // Handle capacity timeline panels (Capacity Utilization and Phase Capacity)
+    if (sidePanelState.chartType === 'capacity-utilization-timeline' || sidePanelState.chartType === 'phase-capacity-timeline') {
+        document.querySelector('.panel-navigation').style.display = 'flex';
+
+        const timePoint = sidePanelState.allMonths[sidePanelState.monthIndex];
+        const timePointLabel = timePoint.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        const { capacityData, leads, specialists } = sidePanelState.chartData;
+
+        // Update title
+        const chartTitle = sidePanelState.chartType === 'capacity-utilization-timeline' ?
+            'Capacity Utilization Timeline' : 'Phase Capacity Over Time';
+        document.getElementById('panelTitle').textContent = `${chartTitle} - ${timePointLabel}`;
+        document.getElementById('currentPeriod').textContent = timePointLabel;
+
+        // Get all projects that are relevant at this time point
+        const relevantProjects = filteredData.filter(project => {
+            const phase = determineProjectPhase(project);
+            if (phase.phase === 'closed' || phase.phase === 'dateError') return false;
+
+            const kickOffDate = parseDateCached(project['Kick-Off Date'], project.__id);
+            const goLiveDate = parseDateCached(project['OH Go-Live Date'], project.__id);
+
+            if (!kickOffDate) return true;
+
+            const ninetyDaysBeforeTimePoint = new Date(timePoint.getTime() - (90 * 24 * 60 * 60 * 1000));
+            const sixtyDaysAfterGoLive = goLiveDate ? new Date(goLiveDate.getTime() + (60 * 24 * 60 * 60 * 1000)) : null;
+
+            if (kickOffDate <= timePoint) {
+                if (sixtyDaysAfterGoLive && timePoint <= sixtyDaysAfterGoLive) {
+                    return true;
+                } else if (!goLiveDate) {
+                    return true;
+                }
+            } else if (kickOffDate > ninetyDaysBeforeTimePoint && kickOffDate <= new Date(timePoint.getTime() + (90 * 24 * 60 * 60 * 1000))) {
+                return true;
+            }
+
+            return false;
+        });
+
+        // Temporarily override Date.now() to determine phases at this time point
+        const originalNow = Date.now;
+        Date.now = () => timePoint.getTime();
+
+        const projectsWithPhases = relevantProjects.map(project => {
+            const phaseInfo = determineProjectPhase(project);
+            return { project, phase: phaseInfo.phase, phaseLabel: phaseInfo.label };
+        });
+
+        Date.now = originalNow;
+
+        // Count projects by phase
+        const phaseCounts = {};
+        projectsWithPhases.forEach(({ phase }) => {
+            phaseCounts[phase] = (phaseCounts[phase] || 0) + 1;
+        });
+
+        // Update summary stats
+        const summaryHTML = `
+            <div class="panel-stat" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                <div style="font-size: 0.875rem; opacity: 0.9; margin-bottom: 0.25rem;">📅 Viewing Date (Simulated)</div>
+                <div style="font-size: 1.125rem; font-weight: 600;">${timePointLabel}</div>
+                <div style="font-size: 0.75rem; opacity: 0.8; margin-top: 0.25rem;">Project phases shown are as predicted on this date</div>
+            </div>
+            <div class="panel-stat">
+                <div class="panel-stat-label">Total Relevant Projects</div>
+                <div class="panel-stat-value">${relevantProjects.length}</div>
+            </div>
+            <div class="panel-stat">
+                <div class="panel-stat-label">Active Testing</div>
+                <div class="panel-stat-value">${phaseCounts.activeTesting || 0}</div>
+            </div>
+            <div class="panel-stat">
+                <div class="panel-stat-label">Pre-Kickoff</div>
+                <div class="panel-stat-value">${(phaseCounts.preKickoff30Plus || 0) + (phaseCounts.preKickoff0to30 || 0)}</div>
+            </div>
+            <div class="panel-stat">
+                <div class="panel-stat-label">Post-Go-Live</div>
+                <div class="panel-stat-value">${(phaseCounts.postGoLive0to30 || 0) + (phaseCounts.postGoLive30Plus || 0)}</div>
+            </div>
+        `;
+        document.getElementById('panelSummary').innerHTML = summaryHTML;
+
+        // Display projects
+        if (projectsWithPhases.length === 0) {
+            document.getElementById('panelProjects').innerHTML = `
+                <div class="panel-empty">
+                    <div class="panel-empty-icon">📋</div>
+                    <p>No projects relevant at this time point</p>
+                </div>
+            `;
+        } else {
+            const projectsHTML = projectsWithPhases.map(({ project, phase, phaseLabel }) => {
+                const facilityName = project['Facility Name'] || 'Unknown Facility';
+                const projectShortName = project['Project Short Name'] || '';
+                const projectLead = project['OH Project Lead'] || 'Not Assigned';
+                const specialist = project['OH Specialist(s)'] || 'Not Assigned';
+                const status = project['Project Status'] || 'Unknown';
+                const region = project['OH Region'] || 'Unknown';
+                const projectType = project['Project Type'] || 'Unknown';
+
+                const kickOffDate = parseDateCached(project['Kick-Off Date'], project.__id);
+                const testStartDate = parseDateCached(project['Testing Start'], project.__id);
+                const testEndDate = parseDateCached(project['Testing End'], project.__id);
+                const goLiveDate = parseDateCached(project['OH Go-Live Date'], project.__id);
+
+                const statusClass = getStatusClass(status);
+
+                // Get phase color
+                const phaseColors = {
+                    preKickoff30Plus: '#94a3b8',
+                    preKickoff0to30: '#3b82f6',
+                    activePreTesting: '#10b981',
+                    activeTesting: '#f59e0b',
+                    activePostTesting: '#06b6d4',
+                    postGoLive0to30: '#8b5cf6',
+                    postGoLive30Plus: '#6366f1',
+                    unknown: '#64748b'
+                };
+                const phaseColor = phaseColors[phase] || '#64748b';
+
+                return `
+                    <div class="project-card">
+                        <div class="project-card-header">
+                            <h4 class="project-name">${facilityName}</h4>
+                            <span class="status-badge ${statusClass}">${status}</span>
+                        </div>
+                        <div class="project-card-body">
+                            ${projectShortName ? `<div class="project-info-row">
+                                <span class="project-info-label">Project:</span>
+                                <span class="project-info-value">${projectShortName}</span>
+                            </div>` : ''}
+                            <div class="project-info-row">
+                                <span class="project-info-label">Predicted Phase:</span>
+                                <span class="project-info-value" style="background: ${phaseColor}; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-weight: 500;">${phaseLabel}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Type:</span>
+                                <span class="project-info-value">${projectType}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Region:</span>
+                                <span class="project-info-value">${region}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Lead:</span>
+                                <span class="project-info-value">${projectLead}</span>
+                            </div>
+                            <div class="project-info-row">
+                                <span class="project-info-label">Specialist:</span>
+                                <span class="project-info-value">${specialist}</span>
+                            </div>
+                        </div>
+                        <div class="project-missing-dates">
+                            <div class="missing-dates-label">Project Dates:</div>
+                            <div style="margin-top: 0.5rem; font-size: 0.875rem; color: var(--text-secondary);">
+                                ${kickOffDate ? `<div>Kick-Off: ${formatDate(kickOffDate)}</div>` : '<div>Kick-Off: Missing</div>'}
+                                ${testStartDate ? `<div>Testing Start: ${formatDate(testStartDate)}</div>` : '<div>Testing Start: Missing</div>'}
+                                ${testEndDate ? `<div>Testing End: ${formatDate(testEndDate)}</div>` : '<div>Testing End: Missing</div>'}
+                                ${goLiveDate ? `<div>Go-Live: ${formatDate(goLiveDate)}</div>` : '<div>Go-Live: Missing</div>'}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('panelProjects').innerHTML = projectsHTML;
+        }
+        return;
+    }
+
     // Handle timeline panels
     document.querySelector('.panel-navigation').style.display = 'flex';
 
@@ -4698,6 +4869,17 @@ function createCapacityUtilizationTimeline() {
             responsive: true,
             maintainAspectRatio: true,
             aspectRatio: 2.5,
+            onClick: (event, elements) => {
+                if (elements.length > 0) {
+                    const timePointIndex = elements[0].index;
+                    openSidePanel('capacity-utilization-timeline', timePointIndex, timePoints, {
+                        capacityData,
+                        leads,
+                        specialists,
+                        viewMode: capacityTimelineViewMode
+                    });
+                }
+            },
             plugins: {
                 legend: {
                     display: true,
@@ -4941,6 +5123,17 @@ function createPhaseCapacityStackedArea() {
             responsive: true,
             maintainAspectRatio: true,
             aspectRatio: 2.5,
+            onClick: (event, elements) => {
+                if (elements.length > 0) {
+                    const timePointIndex = elements[0].index;
+                    openSidePanel('phase-capacity-timeline', timePointIndex, timePoints, {
+                        capacityData,
+                        leads,
+                        specialists,
+                        viewMode: phaseCapacityViewMode
+                    });
+                }
+            },
             plugins: {
                 legend: {
                     display: true,
