@@ -97,7 +97,7 @@ function getAllSpecialistsFromField(specialistField) {
 
 // Determine project phase based on dates
 function determineProjectPhase(project) {
-    const now = new Date();
+    const now = new Date(Date.now());  // Use Date.now() to support overriding for timeline calculations
     const thirtyDaysFromNow = new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000));
     const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
 
