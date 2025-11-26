@@ -4790,6 +4790,15 @@ function createCapacityUtilizationTimeline() {
 
     console.log('Date range:', startDate.toISOString().split('T')[0], 'to', endDate.toISOString().split('T')[0]);
 
+    // Get all available people from the full filtered dataset (for checkbox population)
+    const allAvailableLeads = [...new Set(filteredData.map(p => p['OH Project Lead']).filter(l => l))];
+    const allAvailableSpecialistsSet = new Set();
+    filteredData.forEach(project => {
+        const specialists = getAllSpecialistsFromField(project['OH Specialist(s)']);
+        specialists.forEach(s => allAvailableSpecialistsSet.add(s));
+    });
+    const allAvailableSpecialists = [...allAvailableSpecialistsSet];
+
     // Check if individuals are selected via checkboxes
     const selectedLeads = selectedCapacityTimelineIndividuals.leads || [];
     const selectedSpecialists = selectedCapacityTimelineIndividuals.specialists || [];
@@ -4815,8 +4824,8 @@ function createCapacityUtilizationTimeline() {
     // Calculate capacity over time
     const { capacityData, timePoints, leads, specialists } = calculateCapacityOverTime(projectsForCalculation, startDate, endDate, 'week');
 
-    // Populate individual selection checkboxes
-    populateIndividualCheckboxes('capacityTimeline', leads, specialists);
+    // Populate individual selection checkboxes with ALL available people (not just those in filtered calculation)
+    populateIndividualCheckboxes('capacityTimeline', allAvailableLeads, allAvailableSpecialists);
 
     // Check if we have any data to display
     if (timePoints.length === 0 || (leads.length === 0 && specialists.length === 0)) {
@@ -4844,9 +4853,9 @@ function createCapacityUtilizationTimeline() {
     // Prepare chart data based on view mode
     let datasets = [];
 
-    // Validate selected individuals exist in calculated capacity data
-    const validSelectedLeads = selectedLeads.filter(l => leads.includes(l) && capacityData[l]);
-    const validSelectedSpecialists = selectedSpecialists.filter(s => specialists.includes(s) && capacityData[s]);
+    // Validate selected individuals exist in available people and have calculated capacity data
+    const validSelectedLeads = selectedLeads.filter(l => allAvailableLeads.includes(l) && capacityData[l]);
+    const validSelectedSpecialists = selectedSpecialists.filter(s => allAvailableSpecialists.includes(s) && capacityData[s]);
     const hasValidSelections = validSelectedLeads.length > 0 || validSelectedSpecialists.length > 0;
 
     console.log('Selection state:', {
@@ -4855,8 +4864,10 @@ function createCapacityUtilizationTimeline() {
         validSelectedLeads,
         validSelectedSpecialists,
         hasValidSelections,
-        availableLeads: leads,
-        availableSpecialists: specialists
+        allAvailableLeads,
+        allAvailableSpecialists,
+        calculatedLeads: leads,
+        calculatedSpecialists: specialists
     });
 
     if (hasValidSelections || capacityTimelineViewMode === 'individual') {
@@ -4870,9 +4881,11 @@ function createCapacityUtilizationTimeline() {
             leadsToShow = validSelectedLeads;
             specialistsToShow = validSelectedSpecialists;
         } else {
-            // No selections - show everyone
-            leadsToShow = leads;
-            specialistsToShow = specialists;
+            // No selections - show everyone available in the dataset
+            // Note: capacityData only has data for people in the filtered calculation,
+            // so we filter to only show people who have capacity data
+            leadsToShow = allAvailableLeads.filter(l => capacityData[l]);
+            specialistsToShow = allAvailableSpecialists.filter(s => capacityData[s]);
         }
 
         console.log('Will display:', { leadsToShow, specialistsToShow });
@@ -5088,6 +5101,15 @@ function createPhaseCapacityStackedArea() {
     const startDate = new Date(minDate.getTime() - (90 * 24 * 60 * 60 * 1000));
     const endDate = new Date(maxDate.getTime() + (90 * 24 * 60 * 60 * 1000));
 
+    // Get all available people from the full filtered dataset (for checkbox population)
+    const allAvailableLeads = [...new Set(filteredData.map(p => p['OH Project Lead']).filter(l => l))];
+    const allAvailableSpecialistsSet = new Set();
+    filteredData.forEach(project => {
+        const specialists = getAllSpecialistsFromField(project['OH Specialist(s)']);
+        specialists.forEach(s => allAvailableSpecialistsSet.add(s));
+    });
+    const allAvailableSpecialists = [...allAvailableSpecialistsSet];
+
     // Check if individuals are selected via checkboxes
     const selectedLeads = selectedPhaseCapacityIndividuals.leads || [];
     const selectedSpecialists = selectedPhaseCapacityIndividuals.specialists || [];
@@ -5112,8 +5134,8 @@ function createPhaseCapacityStackedArea() {
     // Calculate capacity over time
     const { capacityData, timePoints, leads, specialists } = calculateCapacityOverTime(projectsForCalculation, startDate, endDate, 'week');
 
-    // Populate individual selection checkboxes
-    populateIndividualCheckboxes('phaseCapacity', leads, specialists);
+    // Populate individual selection checkboxes with ALL available people (not just those in filtered calculation)
+    populateIndividualCheckboxes('phaseCapacity', allAvailableLeads, allAvailableSpecialists);
 
     // Check if we have any data to display
     if (timePoints.length === 0 || (leads.length === 0 && specialists.length === 0)) {
@@ -5153,9 +5175,9 @@ function createPhaseCapacityStackedArea() {
     // Prepare datasets based on view mode
     let datasets = [];
 
-    // Validate selected individuals exist in calculated capacity data
-    const validSelectedLeads = selectedLeads.filter(l => leads.includes(l) && capacityData[l]);
-    const validSelectedSpecialists = selectedSpecialists.filter(s => specialists.includes(s) && capacityData[s]);
+    // Validate selected individuals exist in available people and have calculated capacity data
+    const validSelectedLeads = selectedLeads.filter(l => allAvailableLeads.includes(l) && capacityData[l]);
+    const validSelectedSpecialists = selectedSpecialists.filter(s => allAvailableSpecialists.includes(s) && capacityData[s]);
     const hasValidSelections = validSelectedLeads.length > 0 || validSelectedSpecialists.length > 0;
 
     if (hasValidSelections || phaseCapacityViewMode === 'individual') {
@@ -5169,9 +5191,11 @@ function createPhaseCapacityStackedArea() {
             leadsToShow = validSelectedLeads;
             specialistsToShow = validSelectedSpecialists;
         } else {
-            // No selections - show everyone
-            leadsToShow = leads;
-            specialistsToShow = specialists;
+            // No selections - show everyone available in the dataset
+            // Note: capacityData only has data for people in the filtered calculation,
+            // so we filter to only show people who have capacity data
+            leadsToShow = allAvailableLeads.filter(l => capacityData[l]);
+            specialistsToShow = allAvailableSpecialists.filter(s => capacityData[s]);
         }
 
         // Combine selected individuals
