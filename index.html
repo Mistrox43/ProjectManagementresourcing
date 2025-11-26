@@ -473,34 +473,135 @@
                     <!-- Metrics will be dynamically generated -->
                 </div>
 
-                <!-- Resource Capacity Cards -->
-                <div class="resource-capacity-container">
-                    <div class="capacity-filter-bar">
-                        <h3>Resource Capacity Overview</h3>
-                        <div class="capacity-filter-buttons">
-                            <button class="capacity-filter-btn active" onclick="filterCapacityView('all')" data-filter="all">All</button>
-                            <button class="capacity-filter-btn" onclick="filterCapacityView('leads')" data-filter="leads">Leads</button>
-                            <button class="capacity-filter-btn" onclick="filterCapacityView('specialists')" data-filter="specialists">Specialists</button>
-                            <button class="capacity-filter-btn" onclick="filterCapacityView('overallocated')" data-filter="overallocated">Overallocated</button>
-                            <button class="capacity-filter-btn" onclick="filterCapacityView('available')" data-filter="available">Available</button>
+                <!-- Sub-Tabs for organizing capacity views -->
+                <div class="capacity-sub-tabs">
+                    <button class="capacity-sub-tab active" onclick="switchCapacitySubTab('snapshot')" data-subtab="snapshot">
+                        Current Snapshot
+                    </button>
+                    <button class="capacity-sub-tab" onclick="switchCapacitySubTab('projections')" data-subtab="projections">
+                        Projections Over Time
+                    </button>
+                </div>
+
+                <!-- Sub-Tab: Current Snapshot -->
+                <div class="capacity-sub-tab-content active" id="capacity-subtab-snapshot">
+                    <!-- Resource Capacity Cards -->
+                    <div class="resource-capacity-container">
+                        <div class="capacity-filter-bar">
+                            <h3>Resource Capacity Overview</h3>
+                            <div class="capacity-filter-buttons">
+                                <button class="capacity-filter-btn active" onclick="filterCapacityView('all')" data-filter="all">All</button>
+                                <button class="capacity-filter-btn" onclick="filterCapacityView('leads')" data-filter="leads">Leads</button>
+                                <button class="capacity-filter-btn" onclick="filterCapacityView('specialists')" data-filter="specialists">Specialists</button>
+                                <button class="capacity-filter-btn" onclick="filterCapacityView('overallocated')" data-filter="overallocated">Overallocated</button>
+                                <button class="capacity-filter-btn" onclick="filterCapacityView('available')" data-filter="available">Available</button>
+                            </div>
+                        </div>
+                        <div id="resourceCapacityCards" class="resource-cards-grid">
+                            <!-- Resource cards will be dynamically generated -->
                         </div>
                     </div>
-                    <div id="resourceCapacityCards" class="resource-cards-grid">
-                        <!-- Resource cards will be dynamically generated -->
+
+                    <!-- Phase Distribution Charts -->
+                    <div class="charts-container">
+                        <div class="chart-card">
+                            <h3>Project Leads - Phase Distribution</h3>
+                            <canvas id="leadsPhaseChart"></canvas>
+                        </div>
+                        <div class="chart-card">
+                            <h3>Specialists - Phase Distribution</h3>
+                            <canvas id="specialistsPhaseChart"></canvas>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Phase Distribution Charts -->
-                <div class="charts-container">
+                <!-- Sub-Tab: Projections Over Time -->
+                <div class="capacity-sub-tab-content" id="capacity-subtab-projections">
+                    <!-- NEW: Capacity Utilization Timeline (Option 1) -->
+                    <div class="capacity-timeline-section">
                     <div class="chart-card">
-                        <h3>Project Leads - Phase Distribution</h3>
-                        <canvas id="leadsPhaseChart"></canvas>
-                    </div>
-                    <div class="chart-card">
-                        <h3>Specialists - Phase Distribution</h3>
-                        <canvas id="specialistsPhaseChart"></canvas>
+                        <div class="chart-header-with-controls">
+                            <div>
+                                <h3>Capacity Utilization Timeline</h3>
+                                <p class="chart-subtitle">Track capacity utilization percentage over time</p>
+                            </div>
+                            <div class="chart-controls">
+                                <div class="view-toggle-group">
+                                    <button class="view-toggle-btn active" onclick="toggleCapacityTimelineView('leads')" data-view="leads">
+                                        Project Leads
+                                    </button>
+                                    <button class="view-toggle-btn" onclick="toggleCapacityTimelineView('specialists')" data-view="specialists">
+                                        Specialists
+                                    </button>
+                                    <button class="view-toggle-btn" onclick="toggleCapacityTimelineView('both')" data-view="both">
+                                        Both Roles
+                                    </button>
+                                    <button class="view-toggle-btn" onclick="toggleCapacityTimelineView('individual')" data-view="individual">
+                                        Individual View
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Individual Selection Panel (hidden by default) -->
+                        <div id="capacityTimelineIndividualPanel" class="individual-selection-panel" style="display: none;">
+                            <div class="individual-selection-role">
+                                <h4>Project Leads</h4>
+                                <div id="capacityTimelineLeadCheckboxes" class="checkbox-group"></div>
+                            </div>
+                            <div class="individual-selection-role">
+                                <h4>Specialists</h4>
+                                <div id="capacityTimelineSpecialistCheckboxes" class="checkbox-group"></div>
+                            </div>
+                        </div>
+
+                        <canvas id="capacityUtilizationTimelineChart"></canvas>
                     </div>
                 </div>
+
+                <!-- NEW: Phase Capacity Stacked Area (Option 2) -->
+                <div class="phase-capacity-section">
+                    <div class="chart-card">
+                        <div class="chart-header-with-controls">
+                            <div>
+                                <h3>Phase Capacity Over Time</h3>
+                                <p class="chart-subtitle">Visualize capacity consumption across lifecycle phases</p>
+                            </div>
+                            <div class="chart-controls">
+                                <div class="view-toggle-group">
+                                    <button class="view-toggle-btn active" onclick="togglePhaseCapacityView('leads')" data-view="leads">
+                                        Project Leads
+                                    </button>
+                                    <button class="view-toggle-btn" onclick="togglePhaseCapacityView('specialists')" data-view="specialists">
+                                        Specialists
+                                    </button>
+                                    <button class="view-toggle-btn" onclick="togglePhaseCapacityView('both')" data-view="both">
+                                        Both Roles
+                                    </button>
+                                    <button class="view-toggle-btn" onclick="togglePhaseCapacityView('individual')" data-view="individual">
+                                        Individual View
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Individual Selection Panel (hidden by default) -->
+                        <div id="phaseCapacityIndividualPanel" class="individual-selection-panel" style="display: none;">
+                            <div class="individual-selection-role">
+                                <h4>Project Leads</h4>
+                                <div id="phaseCapacityLeadCheckboxes" class="checkbox-group"></div>
+                            </div>
+                            <div class="individual-selection-role">
+                                <h4>Specialists</h4>
+                                <div id="phaseCapacitySpecialistCheckboxes" class="checkbox-group"></div>
+                            </div>
+                        </div>
+
+                        <canvas id="phaseCapacityStackedAreaChart"></canvas>
+                    </div>
+                </div>
+                </div>
+                <!-- End Sub-Tab: Projections Over Time -->
             </div>
 
             <!-- Tab: Data & Operations -->
