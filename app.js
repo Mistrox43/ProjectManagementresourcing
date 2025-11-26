@@ -4822,17 +4822,15 @@ function createCapacityUtilizationTimeline() {
     // Prepare chart data based on view mode
     let datasets = [];
 
-    if (capacityTimelineViewMode === 'individual') {
-        // Individual view
-        const selectedLeads = selectedCapacityTimelineIndividuals.leads;
-        const selectedSpecialists = selectedCapacityTimelineIndividuals.specialists;
+    // Check if any individuals are selected via checkboxes (takes priority over view mode)
+    const selectedLeads = selectedCapacityTimelineIndividuals.leads || [];
+    const selectedSpecialists = selectedCapacityTimelineIndividuals.specialists || [];
+    const validSelectedLeads = selectedLeads.filter(l => leads.includes(l) && capacityData[l]);
+    const validSelectedSpecialists = selectedSpecialists.filter(s => specialists.includes(s) && capacityData[s]);
+    const hasAnySelection = validSelectedLeads.length > 0 || validSelectedSpecialists.length > 0;
 
-        // Filter selected individuals to only include those in current filtered data
-        const validSelectedLeads = selectedLeads.filter(l => leads.includes(l) && capacityData[l]);
-        const validSelectedSpecialists = selectedSpecialists.filter(s => specialists.includes(s) && capacityData[s]);
-
-        // If ANY individuals are selected (from either role), show ONLY selected; otherwise show defaults
-        const hasAnySelection = validSelectedLeads.length > 0 || validSelectedSpecialists.length > 0;
+    if (hasAnySelection || capacityTimelineViewMode === 'individual') {
+        // Individual view - show specific people (either selected via checkboxes or default top 5)
         const leadsToShow = hasAnySelection ? validSelectedLeads : leads.slice(0, 5);
         const specialistsToShow = hasAnySelection ? validSelectedSpecialists : specialists.slice(0, 5);
 
@@ -5091,17 +5089,15 @@ function createPhaseCapacityStackedArea() {
     // Prepare datasets based on view mode
     let datasets = [];
 
-    if (phaseCapacityViewMode === 'individual') {
-        // Individual view - show phase breakdown for selected individuals
-        const selectedLeads = selectedPhaseCapacityIndividuals.leads;
-        const selectedSpecialists = selectedPhaseCapacityIndividuals.specialists;
+    // Check if any individuals are selected via checkboxes (takes priority over view mode)
+    const selectedLeads = selectedPhaseCapacityIndividuals.leads || [];
+    const selectedSpecialists = selectedPhaseCapacityIndividuals.specialists || [];
+    const validSelectedLeads = selectedLeads.filter(l => leads.includes(l) && capacityData[l]);
+    const validSelectedSpecialists = selectedSpecialists.filter(s => specialists.includes(s) && capacityData[s]);
+    const hasAnySelection = validSelectedLeads.length > 0 || validSelectedSpecialists.length > 0;
 
-        // Filter selected individuals to only include those in current filtered data
-        const validSelectedLeads = selectedLeads.filter(l => leads.includes(l) && capacityData[l]);
-        const validSelectedSpecialists = selectedSpecialists.filter(s => specialists.includes(s) && capacityData[s]);
-
-        // If ANY individuals are selected (from either role), show ONLY selected; otherwise show defaults
-        const hasAnySelection = validSelectedLeads.length > 0 || validSelectedSpecialists.length > 0;
+    if (hasAnySelection || phaseCapacityViewMode === 'individual') {
+        // Individual view - show phase breakdown for selected individuals or default top 3
         const leadsToShow = hasAnySelection ? validSelectedLeads : leads.slice(0, 3);
         const specialistsToShow = hasAnySelection ? validSelectedSpecialists : specialists.slice(0, 3);
 
@@ -5258,7 +5254,11 @@ function toggleCapacityTimelineView(mode) {
 
     // Show/hide individual selection panel
     const panel = document.getElementById('capacityTimelineIndividualPanel');
-    if (mode === 'individual') {
+    // Keep panel visible if in individual mode OR if any individuals are selected
+    const hasSelections = (selectedCapacityTimelineIndividuals.leads && selectedCapacityTimelineIndividuals.leads.length > 0) ||
+                         (selectedCapacityTimelineIndividuals.specialists && selectedCapacityTimelineIndividuals.specialists.length > 0);
+
+    if (mode === 'individual' || hasSelections) {
         panel.classList.add('active');
         panel.style.display = 'flex';
     } else {
@@ -5282,7 +5282,11 @@ function togglePhaseCapacityView(mode) {
 
     // Show/hide individual selection panel
     const panel = document.getElementById('phaseCapacityIndividualPanel');
-    if (mode === 'individual') {
+    // Keep panel visible if in individual mode OR if any individuals are selected
+    const hasSelections = (selectedPhaseCapacityIndividuals.leads && selectedPhaseCapacityIndividuals.leads.length > 0) ||
+                         (selectedPhaseCapacityIndividuals.specialists && selectedPhaseCapacityIndividuals.specialists.length > 0);
+
+    if (mode === 'individual' || hasSelections) {
         panel.classList.add('active');
         panel.style.display = 'flex';
     } else {
@@ -5373,6 +5377,20 @@ function handleIndividualSelection(chartType, role, person, isChecked) {
         } else {
             selectedCapacityTimelineIndividuals[role] = selectedCapacityTimelineIndividuals[role].filter(p => p !== person);
         }
+
+        // Update panel visibility based on selections
+        const panel = document.getElementById('capacityTimelineIndividualPanel');
+        const hasSelections = (selectedCapacityTimelineIndividuals.leads && selectedCapacityTimelineIndividuals.leads.length > 0) ||
+                             (selectedCapacityTimelineIndividuals.specialists && selectedCapacityTimelineIndividuals.specialists.length > 0);
+
+        if (capacityTimelineViewMode === 'individual' || hasSelections) {
+            panel.classList.add('active');
+            panel.style.display = 'flex';
+        } else {
+            panel.classList.remove('active');
+            panel.style.display = 'none';
+        }
+
         createCapacityUtilizationTimeline();
     } else if (chartType === 'phaseCapacity') {
         if (isChecked) {
@@ -5382,6 +5400,20 @@ function handleIndividualSelection(chartType, role, person, isChecked) {
         } else {
             selectedPhaseCapacityIndividuals[role] = selectedPhaseCapacityIndividuals[role].filter(p => p !== person);
         }
+
+        // Update panel visibility based on selections
+        const panel = document.getElementById('phaseCapacityIndividualPanel');
+        const hasSelections = (selectedPhaseCapacityIndividuals.leads && selectedPhaseCapacityIndividuals.leads.length > 0) ||
+                             (selectedPhaseCapacityIndividuals.specialists && selectedPhaseCapacityIndividuals.specialists.length > 0);
+
+        if (phaseCapacityViewMode === 'individual' || hasSelections) {
+            panel.classList.add('active');
+            panel.style.display = 'flex';
+        } else {
+            panel.classList.remove('active');
+            panel.style.display = 'none';
+        }
+
         createPhaseCapacityStackedArea();
     }
 }
