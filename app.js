@@ -4389,6 +4389,8 @@ function calculateCapacityOverTime(projects, startDate, endDate, granularity = '
     // For each time point, calculate capacity as if we're looking at that date
     timePoints.forEach((timePoint, timeIdx) => {
         const isFirstTimePoint = timeIdx === 0;
+        const isMiddleTimePoint = timeIdx === Math.floor(timePoints.length / 2);
+        const isFeb2026 = timePoint >= new Date('2026-02-01') && timePoint <= new Date('2026-03-01');
 
         // Filter projects that would be active/relevant at this time point
         const relevantProjects = projects.filter(project => {
@@ -4422,11 +4424,15 @@ function calculateCapacityOverTime(projects, startDate, endDate, granularity = '
             return false;
         });
 
+        if (isFeb2026) {
+            console.log(`\n📅 Time point ${timePoint.toISOString().split('T')[0]}: ${relevantProjects.length} relevant projects`);
+        }
+
         // Calculate capacity for each person at this time point
         leads.forEach((lead, leadIdx) => {
             const leadProjects = relevantProjects.filter(p => p['OH Project Lead'] === lead);
-            // Enable debug for first time point and first lead only
-            const debugMode = isFirstTimePoint && leadIdx === 0;
+            // Enable debug for first lead at first time point OR during Feb 2026 testing period
+            const debugMode = (isFirstTimePoint && leadIdx === 0) || (isFeb2026 && leadIdx === 0);
             const capacity = calculateResourceCapacityForProjects(lead, 'Lead', leadProjects, timePoint, debugMode);
 
             capacityData[lead].timePoints.push(timePoint);
@@ -4439,8 +4445,8 @@ function calculateCapacityOverTime(projects, startDate, endDate, granularity = '
                 const projectSpecialists = getAllSpecialistsFromField(p['OH Specialist(s)']);
                 return projectSpecialists.includes(specialist);
             });
-            // Enable debug for first time point and first specialist only
-            const debugMode = isFirstTimePoint && specIdx === 0;
+            // Enable debug for first specialist at first time point OR during Feb 2026 testing period
+            const debugMode = (isFirstTimePoint && specIdx === 0) || (isFeb2026 && specIdx === 0);
             const capacity = calculateResourceCapacityForProjects(specialist, 'Specialist', specialistProjects, timePoint, debugMode);
 
             capacityData[specialist].timePoints.push(timePoint);
