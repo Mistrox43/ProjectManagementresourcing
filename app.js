@@ -4850,9 +4850,9 @@ function createCapacityUtilizationTimeline() {
     const hasValidSelections = validSelectedLeads.length > 0 || validSelectedSpecialists.length > 0;
 
     if (hasValidSelections || capacityTimelineViewMode === 'individual') {
-        // Individual view - show specific people (either selected via checkboxes or default top 5)
-        const leadsToShow = hasValidSelections ? validSelectedLeads : leads.slice(0, 5);
-        const specialistsToShow = hasValidSelections ? validSelectedSpecialists : specialists.slice(0, 5);
+        // Individual view - show specific people (either selected via checkboxes or everyone if no selection)
+        const leadsToShow = hasValidSelections ? validSelectedLeads : leads;
+        const specialistsToShow = hasValidSelections ? validSelectedSpecialists : specialists;
 
         const colors = [
             '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -5136,9 +5136,9 @@ function createPhaseCapacityStackedArea() {
     const hasValidSelections = validSelectedLeads.length > 0 || validSelectedSpecialists.length > 0;
 
     if (hasValidSelections || phaseCapacityViewMode === 'individual') {
-        // Individual view - show phase breakdown for selected individuals or default top 3
-        const leadsToShow = hasValidSelections ? validSelectedLeads : leads.slice(0, 3);
-        const specialistsToShow = hasValidSelections ? validSelectedSpecialists : specialists.slice(0, 3);
+        // Individual view - show phase breakdown for selected individuals or everyone if no selection
+        const leadsToShow = hasValidSelections ? validSelectedLeads : leads;
+        const specialistsToShow = hasValidSelections ? validSelectedSpecialists : specialists;
 
         // Combine selected individuals
         const peopleToShow = [...leadsToShow, ...specialistsToShow];
